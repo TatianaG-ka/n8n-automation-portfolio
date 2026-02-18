@@ -12,7 +12,7 @@
 **A multi-tool AI marketing assistant accessible via Telegram that creates images, writes blog posts, generates LinkedIn content, and processes voice commands.**
 
 
-![Workflow Screenshot](/01-ai-marketing-team/screenshots/workflow-canvas.png)
+![Workflow Screenshot](screenshots/workflow-canvas.png)
 
 
 ---
@@ -29,8 +29,8 @@
 
 ## 🔧 How It Works
 
-```
-
+```mermaid
+graph TD
     A[Telegram Message] --> B{Text or Voice?}
     B -->|Voice| C[Download Audio]
     C --> D[Transcribe recording OpenAI]
@@ -44,7 +44,11 @@
     F -->|Video| K[Video Script]
     F -->|Think| L[Research & Plan]
     G --> M[Telegram Response]
-  
+    H --> M
+    I --> M
+    J --> M
+    K --> M
+    L --> M
 ```
 
 # 🇵🇱 Wersja polska
