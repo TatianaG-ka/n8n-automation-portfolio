@@ -21,13 +21,13 @@
 
 Przechodzę z automatyzacji i manualnego testowania (5+ lat z Playwright, Selenium, REST Assured) do automatyzacji procesów biznesowych. Aktualnie buduję rozwiązania automatyzacji w n8n dla klientów e-commerce, pracując z REST API, OpenAI, Claude i bazami wektorowymi.
 
-📧 tatiana.golinska@gmail.com · [LinkedIn](https://www.linkedin.com/in/tatiana-golinska/) · [GitHub](https://github.com/TatianaG-ka/)
+📧 tatiana.golinska@gmail.com · [LinkedIn](https://www.linkedin.com/in/tetiana-golinska/) · [GitHub](https://github.com/TatianaG-ka/)
 
 ---
 
 ## 🎬 Demo: Wielojęzyczny Chatbot AI
 
-[![Raymon AI Assistant Demo](https://img.shields.io/badge/▶_Obejrzyj_Demo-FF0000?style=for-the-badge&logo=youtube&logoColor=white)](https://youtu.be/K9fpfK8-U-0)
+[![Raymon AI Assistant Demo](https://img.shields.io/badge/▶_Obejrzyj_Demo-FF0000?style=for-the-badge&logo=youtube&logoColor=white)](https://www.youtube.com/watch?v=K9fpfK8-U-0)
 
 Wielojęzyczny chatbot AI do obsługi klienta wdrożony na demo stronie **Raymon Bicycles** (niemiecka marka e-bike'ów). Bot **automatycznie rozpoznaje język klienta** i odpowiada w tym samym języku — po polsku, niemiecku, angielsku i w każdym innym.
 
