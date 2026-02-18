@@ -13,11 +13,7 @@
 
 **A multilingual AI customer support system for Raymon Bicycles (German e-bike brand) with two interaction modes — text chat and voice calls. Automatically detects the customer's language and responds accordingly. Deployed on a live website.**
 
-[![Demo](https://img.shields.io/badge/▶_Demo-FF0000?style=for-the-badge&logo=youtube&logoColor=white)](https://github.com/TatianaG-ka/n8n-automation-portfolio/releases/download/v1.0/ChatBot_Voice_Agent_video.mp4)
-
-<video src="https://github.com/TatianaG-ka/n8n-automation-portfolio/releases/download/v1.0/ChatBot_Voice_Agent_video.mp4" controls style="max-width: 100%; height: auto;">
-    Demo
-</video>
+[![Demo](https://img.shields.io/badge/▶_Demo-FF0000?style=for-the-badge&logo=youtube&logoColor=white)](https://youtu.be/K9fpfK8-U-0)
 
 
 ![Workflow Screenshot](screenshots/workflow-canvas.png)
