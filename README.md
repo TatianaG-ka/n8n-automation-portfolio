@@ -21,14 +21,14 @@
 
 I'm transitioning from test automation and manual testing (5+ years with Playwright, Selenium, REST Assured) into business process automation. Currently building n8n-based automation solutions for e-commerce clients, working with REST APIs, OpenAI, and vector databases.
 
-📧 tatiana.golinska@gmail.com · [LinkedIn](https://www.linkedin.com/in/tatiana-golinska/) · [GitHub](https://github.com/TatianaG-ka/)
+📧 tatiana.golinska@gmail.com · [LinkedIn](https://www.linkedin.com/in/tetiana-golinska/) · [GitHub](https://github.com/TatianaG-ka/)
 
 ---
 
 ## 🎬 Demo: Multilingual AI Chatbot 
 
 <!-- 🎥 REPLACE_THIS_LINK with your YouTube video URL after recording -->
-[![Raymon AI Assistant Demo](https://img.shields.io/badge/▶_Watch_Demo-FF0000?style=for-the-badge&logo=youtube&logoColor=white)](https://youtu.be/K9fpfK8-U-0)
+[![Raymon AI Assistant Demo](https://img.shields.io/badge/▶_Watch_Demo-FF0000?style=for-the-badge&logo=youtube&logoColor=white)](https://youtu.be/watch?v=K9fpfK8-U-0)
 
 A multilingual AI customer support chatbot deployed on a demo website for **Raymon Bicycles** (German e-bike brand). The bot **automatically detects the customer's language** and responds in the same language — Polish, German, English, or any other.
 
@@ -41,9 +41,6 @@ A multilingual AI customer support chatbot deployed on a demo website for **Raym
 | **AI** | OpenAI GPT + ElevenLabs (voice & conversational AI) |
 | **Hosting** | Netlify |
 
-<!-- 📸 ADD SCREENSHOT: n8n workflow canvas for this chatbot
-![Raymon Chatbot Workflow](05-raymon-multilingual-chatbot/screenshots/workflow-canvas.png)
--->
 
 > 💡 This project demonstrates end-to-end chatbot delivery: from n8n workflow design through AI integration to live deployment on a real product website.
 
@@ -73,8 +70,8 @@ These workflows were built while completing n8n and AI automation courses. They 
 | # | Project | What It Demonstrates | Integrations |
 |---|---------|---------------------|--------------|
 | 01 | [**AI Marketing Team**](01-ai-marketing-team/) | Multi-tool AI agent with voice input | OpenAI GPT-4, DALL·E, Whisper, Telegram |
-| 02 | [**RAG E-commerce Chatbot**](02-rag-ecommerce-chatbot/) | RAG architecture: auto-ingestion + vector search | OpenAI, Pinecone, Google Drive |
-| 03 | [**Sales Automation Pipeline**](04-sales-automation-pipeline/) | Complete sales cycle with AI follow-ups | Gmail, Google Sheets, Calendly, OpenAI |
+| 02 | [**RAG E-commerce Chatbot**](02-RAG%20E-commerce%20Chatbot/) | RAG architecture: auto-ingestion + vector search | OpenAI, Pinecone, Google Drive |
+| 03 | [**Sales Automation Pipeline**](03-sales-automation-pipeline/) | Complete sales cycle with AI follow-ups | Gmail, Google Sheets, Calendly, OpenAI |
 
 ---
 
