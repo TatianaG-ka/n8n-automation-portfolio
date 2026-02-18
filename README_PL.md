@@ -72,8 +72,8 @@ Workflow zbudowane podczas kursów n8n i automatyzacji AI. Pokazują moje zrozum
 | # | Projekt | Co demonstruje | Integracje |
 |---|---------|---------------|------------|
 | 01 | [**AI Marketing Team**](01-ai-marketing-team/) | Wielonarzędziowy agent AI z wejściem głosowym | OpenAI GPT-4, DALL·E, Whisper, Telegram |
-| 02 | [**RAG Chatbot E-commerce**](02-rag-ecommerce-chatbot/) | Architektura RAG: auto-ingestion + wyszukiwanie wektorowe | OpenAI, Pinecone, Google Drive |
-| 03 | [**Pipeline Sprzedaży**](04-sales-automation-pipeline/) | Pełen cykl sprzedaży z AI follow-upami | Gmail, Google Sheets, Calendly, OpenAI |
+| 02 | [**RAG Chatbot E-commerce**](02-rag e-commerce chatbot/) | Architektura RAG: auto-ingestion + wyszukiwanie wektorowe | OpenAI, Pinecone, Google Drive |
+| 03 | [**Pipeline Sprzedaży**](03-sales-automation-pipeline/) | Pełen cykl sprzedaży z AI follow-upami | Gmail, Google Sheets, Calendly, OpenAI |
 
 ---
 
