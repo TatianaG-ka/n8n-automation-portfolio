@@ -16,7 +16,7 @@
 [![Demo](https://img.shields.io/badge/▶_Demo-FF0000?style=for-the-badge&logo=youtube&logoColor=white)](https://youtu.be/K9fpfK8-U-0)
 
 
-![Workflow Screenshot](05-raymon-multilingual-chatbot/screenshots/workflow-canvas.png)
+![Workflow Screenshot](screenshots/workflow-canvas.png)
 
 ---
 
@@ -99,7 +99,7 @@ When the bot can't answer, it doesn't make things up — it redirects to the rig
 | No support for international customers | Automatic multi-language support (70+ languages) without additional staff |
 
 
-![Benefits_slide](05-raymon-multilingual-chatbot/screenshots/benefits-slide.png)
+![Benefits_slide](screenshots/benefits_slide.png)
 
 ---
 
