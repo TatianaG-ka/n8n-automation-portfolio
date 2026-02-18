@@ -14,7 +14,7 @@
 **A complete, multi-stage sales automation system that processes inbound leads from email, manages them in a CRM (Google Sheets), sends personalized AI-generated follow-up sequences, handles meeting scheduling via Calendly, and automatically manages no-shows — all without manual intervention.**
 
 
-![Workflow Screenshot](04-sales-automation-pipeline/screenshots/workflow-canvas.png)
+![Workflow Screenshot](screenshots/workflow-canvas.png)
 
 
 ---
