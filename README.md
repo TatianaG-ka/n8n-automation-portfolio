@@ -71,7 +71,7 @@ These workflows were built while completing n8n and AI automation courses. They 
 | 01 | [**AI Marketing Team**](01-ai-marketing-team/) | Multi-tool AI agent with voice input | OpenAI GPT-4, DALL·E, Whisper, Telegram |
 | 02 | [**RAG E-commerce Chatbot**](02-RAG%20E-commerce%20Chatbot/) | RAG architecture: auto-ingestion + vector search | OpenAI, Pinecone, Google Drive |
 | 03 | [**Sales Automation Pipeline**](03-sales-automation-pipeline/) | Complete sales cycle with AI follow-ups | Gmail, Google Sheets, Calendly, OpenAI |
-| 04 | [**Multilingual AI Chatbot**] | [![Raymon AI Assistant Demo](https://img.shields.io/badge/▶_Watch_Demo-FF0000?style=for-the-badge&logo=youtube&logoColor=white)](https://youtu.be/watch?v=K9fpfK8-U-0) | OpenAI GPT + ElevenLabs (voice & conversational AI)I |
+| 04 | **Multilingual AI Chatbot** | [![Raymon AI Assistant Demo](https://img.shields.io/badge/▶_Watch_Demo-FF0000?style=for-the-badge&logo=youtube&logoColor=white)](https://youtu.be/watch?v=K9fpfK8-U-0) | OpenAI GPT + ElevenLabs (voice & conversational AI)  |
 
 ---
 
