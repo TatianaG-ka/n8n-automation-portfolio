@@ -21,7 +21,7 @@
 
 I'm transitioning from test automation and manual testing (5+ years with Playwright, Selenium, REST Assured) into business process automation. Currently building n8n-based automation solutions for e-commerce clients, working with REST APIs, OpenAI, and vector databases.
 
-📧 tatiana.golinska@gmail.com · [LinkedIn](https://www.linkedin.com/in/tetiana-golinska/) · [GitHub](https://github.com/TatianaG-ka/)
+📧 [LinkedIn](https://www.linkedin.com/in/tetiana-golinska/) · [GitHub](https://github.com/TatianaG-ka/)
 
 ---
 
