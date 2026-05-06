@@ -419,7 +419,7 @@ After basic setup works, consider:
 - Set up monitoring dashboard (Grafana + n8n metrics endpoint)
 - Add Sentry integration for production error tracking
 - Implement v7 features from roadmap (see [README.md](../README.md#roadmap-v7))
-- Run [test_emails.json](../test_emails.json) suite weekly as health check
+- Run [test_emails.json](testy/test_emails.json) suite weekly as health check — see [`test_cases.md`](testy/test_cases.md) for full specification of 33 test scenarios
 
 ---
 
