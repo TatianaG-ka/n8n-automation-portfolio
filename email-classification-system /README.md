@@ -1,7 +1,16 @@
+# n8n-automation-portfolio
+
+Production n8n workflows demonstrating AI integration patterns, defensive engineering, and config-as-data architecture.
 
 > **Featured project:** Email Triage System — `gpt-4o-mini` email classifier + auto-router + draft generator with human-in-the-loop approval. Three connected workflows (~60 functional nodes), 24/24 end-to-end tests passing, designed for non-technical operator self-service.
 
-📖 [Business case study](https://rich-peace-f2a.notion.site/Email-Triage-automatyzacja-skrzynki-Gmail-34f9c64536fc811db728c4e27c983254) · 🎬 [3-minute walkthrough](https://www.youtube.com/watch?v=WiEwL8NJ8II) · 📋 [10 ADRs](docs/design-decisions.md)
+📖 [Business case study](https://your-notion-url) · 🎬 [3-minute walkthrough on YouTube](https://www.youtube.com/watch?v=WiEwL8NJ8II) · 📋 [10 ADRs](docs/design-decisions.md)
+
+> Code snippets in this README are extracted directly from production workflow JSON, not pseudo-code. Names, comments, and behavior match what runs at the client.
+
+[![Email Triage System — 3-minute walkthrough](https://i.ytimg.com/vi/WiEwL8NJ8II/maxresdefault.jpg)](https://www.youtube.com/watch?v=WiEwL8NJ8II)
+
+> **▲ Click to watch:** 3-minute walkthrough showing the system end-to-end — Gmail trigger, AI classification, Slack notifications, approval flow, audit log.
 
 ---
 
@@ -9,10 +18,9 @@
 
 | Component | Trigger | Functional nodes | Purpose |
 |---|---|---|---|
-| **Main flow** | Gmail polling (30 min) | 33 | Read → classify → route → draft → notify → [approval] |
-| **Extended** | Webhook from main | 23 | AI tasks → Trello + Drive + Sheets log |
+| **Main flow (v6.1)** | Gmail polling (1 min) | 33 | Read → classify → route → draft → notify → [approval] |
+| **Extended (v1.1)** | Webhook from main | 23 | AI tasks → Trello + Drive + Sheets log |
 | **Error Handler** | n8n Error Trigger | 4 | Severity-classified Slack + Gmail alerts |
-
 
 ```mermaid
 flowchart TB
@@ -33,7 +41,7 @@ flowchart TB
         ErrTrigger[Error Trigger] --> ErrProcess[severity classify · alert]
     end
 
-    Sheets[(Google Sheets<br/>Zespol · Konfiguracja · Kategorie · Historia)]
+    Sheets[(Google Sheets<br/>Zespół · Konfiguracja · Kategorie · Historia)]
     Slack[Slack alerts]
     Drafts[Gmail drafts]
     External[Trello + Drive]
@@ -70,7 +78,7 @@ flowchart TB
 ```
 Gmail Trigger (poll 1min, unread filter)
      ↓
-Load Sheets × 3 (Zespol / Konfiguracja / Kategorie)   retry 3× × 2s
+Load Sheets × 3 (Zespół / Konfiguracja / Kategorie)   retry 3× × 2s
      ↓
 Validate Email                                         Code node
      ├── Idempotency: $getWorkflowStaticData (last 500 messageIds)
@@ -85,7 +93,7 @@ Validate and Route                                     Code node
      ├── Parse AI output (object / markdown-fenced / raw text / direct)
      ├── Semantic fallback (unknown category → default + flag)
      ├── Keyword fallback (regex on subject+body, 9 patterns)
-     ├── Assign person from Zespol[category]
+     ├── Assign person from Zespół[category]
      └── Set crisis manager if isUrgent
      ↓
 Gmail Add Label  →  AI Generate Draft (temp 0.4)  →  Gmail Create Draft
@@ -99,7 +107,7 @@ Format Notification ──┬── NOTIFY ──→ Slack channel + DM → Mark
                                        → GSheets Log Decision
 ```
 
-For full Mermaid + ASCII diagrams: [`docs/architecture.md`](docs/architecture.md)
+For full Mermaid + ASCII diagrams: [`docs/architecture.md`](docs/architecture.md) *(coming soon — extended diagrams currently inlined in this README)*
 
 ---
 
@@ -450,7 +458,9 @@ Edge cases verified:
 
 Full results + per-test execution IDs: [`docs/testy/test_results_2026-04-08.md`](docs/testy/test_results_2026-04-08.md)
 
-Test data + replay instructions: [`test_emails.json`](test_emails.json)
+Test specification (33 cases — what each test verifies, expected outcomes, error simulation procedures): [`docs/testy/test_cases.md`](docs/testy/test_cases.md)
+
+Test data + replay instructions: [`docs/testy/test_emails.json`](docs/testy/test_emails.json)
 
 ---
 
@@ -477,8 +487,8 @@ The system is designed to be modified by **operator**, not developer:
 
 | Change | Where | Deploy needed |
 |---|---|---|
-| Add new category | New row in `Kategorie` + `Zespol` Sheets | No |
-| Reassign team member | Edit `Zespol` row | No |
+| Add new category | New row in `Kategorie` + `Zespół` Sheets | No |
+| Reassign team member | Edit `Zespół` row | No |
 | Change AI prompt context | Edit `Kategorie.opis_dla_ai` | No |
 | Change tone of voice | Edit `Kategorie.ton_odpowiedzi` | No |
 | Adjust truncation/limits | Edit `Konfiguracja` | No |
@@ -510,7 +520,7 @@ cat docs/SETUP.md
 #    See: docs/SETUP.md#phase-6-n8n-credentials
 
 # 5. Set up Google Sheets per docs/google-sheets-schema.md
-#    4 tabs: Zespol / Konfiguracja / Kategorie / Historia
+#    4 tabs: Zespół / Konfiguracja / Kategorie / Historia
 
 # 6. Test with pinned input data before activation
 ```
@@ -525,15 +535,17 @@ Full step-by-step: [`docs/SETUP.md`](docs/SETUP.md)
 .
 ├── README.md                              ← you are here
 ├── workflows/
+│   ├── README.md                         Sanitization disclosure + placeholder reference
 │   ├── 01-email-triage-main.json         33 nodes, Gmail trigger
 │   ├── 02-email-triage-extended.json     24 nodes (23 functional + 1 sticky), webhook trigger
 │   └── 03-email-triage-error-handler.json 5 nodes (4 functional + 1 sticky), error trigger
 ├── docs/
 │   ├── design-decisions.md               10 ADRs in immutable format
 │   ├── google-sheets-schema.md           Schema for 4 config tabs
+│   ├── google-sheets-template.xlsx       Pre-filled template, importable to Google Sheets
 │   ├── SETUP.md                          Step-by-step deployment
-│   ├── architecture.md                   Data flow + Mermaid diagrams
-│   ├── workflow-map-embed-guide.md       How to embed presentation/ in Notion/YouTube
+│   ├── architecture.md                   Data flow + Mermaid diagrams                  (coming soon)
+│   ├── workflow-map-embed-guide.md       How to embed presentation/ in Notion/YouTube  (coming soon)
 │   ├── prompts/
 │   │   ├── README.md                     Prompt versioning policy
 │   │   ├── categorize-v1-production.md   Active classifier prompt
@@ -542,12 +554,13 @@ Full step-by-step: [`docs/SETUP.md`](docs/SETUP.md)
 │   │   ├── generate-draft-v2-candidate.md   Candidate with 4-element structure
 │   │   └── ab-test-methodology.md        Test design, metrics, decision criteria
 │   └── testy/
+│       ├── test_cases.md                 33 test cases (executable spec)
+│       ├── test_emails.json              24 test scenarios (input data)
 │       └── test_results_2026-04-08.md    24/24 pass full pipeline
-├── presentation/
+├── presentation/                                                                       (coming soon)
 │   ├── workflow-map.jsx                  React component for client demos
 │   └── README.md
-├── test_emails.json                      24 test scenarios
-└── screenshots/
+└── screenshots/                                                                        (coming soon)
 ```
 
 ---
@@ -567,17 +580,20 @@ Full step-by-step: [`docs/SETUP.md`](docs/SETUP.md)
 
 ## Documentation index
 
-| Document | Purpose | Audience |
-|---|---|---|
-| [`README.md`](README.md) | Code reference (this file) | Developer |
-| [`docs/SETUP.md`](docs/SETUP.md) | Step-by-step deployment | DevOps |
-| [`docs/design-decisions.md`](docs/design-decisions.md) | 10 ADRs with full context | Senior reviewer |
-| [`docs/google-sheets-schema.md`](docs/google-sheets-schema.md) | Sheet tabs reference | Operator |
-| [`docs/architecture.md`](docs/architecture.md) | Data flow + Mermaid diagrams | Engineer |
-| [`docs/prompts/`](docs/prompts/) | Prompt versioning + A/B test methodology | AI engineer / Senior reviewer |
-| [`docs/workflow-map-embed-guide.md`](docs/workflow-map-embed-guide.md) | Embedding presentation/ asset | Marketing |
-| [`docs/testy/test_results_2026-04-08.md`](docs/testy/test_results_2026-04-08.md) | Test execution report | QA |
-| [`presentation/`](presentation/) | React component for client demos | Stakeholder |
+| Document | Purpose | Audience | Status |
+|---|---|---|---|
+| [`README.md`](README.md) | Code reference (this file) | Developer | Live |
+| [`docs/SETUP.md`](docs/SETUP.md) | Step-by-step deployment | DevOps | Live |
+| [`docs/design-decisions.md`](docs/design-decisions.md) | 10 ADRs with full context | Senior reviewer | Live |
+| [`docs/google-sheets-schema.md`](docs/google-sheets-schema.md) | Sheet tabs reference | Operator | Live |
+| [`docs/google-sheets-template.xlsx`](docs/google-sheets-template.xlsx) | Pre-filled template, importable to Google Sheets | Operator | Live |
+| [`docs/prompts/`](docs/prompts/) | Prompt versioning + A/B test methodology | AI engineer / Senior reviewer | Live |
+| [`docs/testy/test_cases.md`](docs/testy/test_cases.md) | Test specification (33 cases) | QA / Senior reviewer | Live |
+| [`docs/testy/test_results_2026-04-08.md`](docs/testy/test_results_2026-04-08.md) | Test execution report | QA | Live |
+| [`workflows/README.md`](workflows/README.md) | Sanitization disclosure + placeholder reference | Security reviewer | Live |
+| [`docs/architecture.md`](docs/architecture.md) | Data flow + Mermaid diagrams | Engineer | Coming soon |
+| [`docs/workflow-map-embed-guide.md`](docs/workflow-map-embed-guide.md) | Embedding presentation/ asset | Marketing | Coming soon |
+| [`presentation/`](presentation/) | React component for client demos | Stakeholder | Coming soon |
 
 ---
 
