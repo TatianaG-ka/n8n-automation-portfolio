@@ -1,4 +1,4 @@
-# n8n-automation-portfolio
+# Email Triage System
 
 Production n8n workflows demonstrating AI integration patterns, defensive engineering, and config-as-data architecture.
 
