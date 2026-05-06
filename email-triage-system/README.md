@@ -1,16 +1,16 @@
 # Email Triage System
 
-Production n8n workflows demonstrating AI integration patterns, defensive engineering, and config-as-data architecture.
 
 > **Featured project:** Email Triage System — `gpt-4o-mini` email classifier + auto-router + draft generator with human-in-the-loop approval. Three connected workflows (~60 functional nodes), 24/24 end-to-end tests passing, designed for non-technical operator self-service.
 
-📖 [Business case study](https://your-notion-url) · 🎬 [3-minute walkthrough on YouTube](https://www.youtube.com/watch?v=WiEwL8NJ8II) · 📋 [10 ADRs](docs/design-decisions.md)
+📖 [Business case study](https://rich-peace-f2a.notion.site/Email-Triage-System-34f9c64536fc811db728c4e27c983254?source=copy_link) · 🎬 [4-minute walkthrough on YouTube](https://www.youtube.com/watch?v=WiEwL8NJ8II) · 📋 [10 ADRs](docs/design_decisions_ADR.md)
 
-> Code snippets in this README are extracted directly from production workflow JSON, not pseudo-code. Names, comments, and behavior match what runs at the client.
+> Code snippets in this README are extracted directly from production workflow JSON, not pseudo-code.
 
-[![Email Triage System — 3-minute walkthrough](https://i.ytimg.com/vi/WiEwL8NJ8II/maxresdefault.jpg)](https://www.youtube.com/watch?v=WiEwL8NJ8II)
+[![Email Triage System — 4-minute walkthrough](https://i.ytimg.com/vi/WiEwL8NJ8II/maxresdefault.jpg)](https://www.youtube.com/watch?v=WiEwL8NJ8II)
 
-> **▲ Click to watch:** 3-minute walkthrough showing the system end-to-end — Gmail trigger, AI classification, Slack notifications, approval flow, audit log.
+> **▲ Click to watch:** 4-minute walkthrough showing the system end-to-end — Gmail trigger, AI classification, Slack notifications, approval flow, audit log.
+
 
 ---
 
@@ -107,11 +107,9 @@ Format Notification ──┬── NOTIFY ──→ Slack channel + DM → Mark
                                        → GSheets Log Decision
 ```
 
-For full Mermaid + ASCII diagrams: [`docs/architecture.md`](docs/architecture.md) *(coming soon — extended diagrams currently inlined in this README)*
-
 ---
 
-## Code patterns worth highlighting
+## Code patterns 
 
 ### AI prompt + structured output schema
 
@@ -211,7 +209,7 @@ if (skippedDuplicates > 0) {
 
 ### Four-layer AI parsing fallback
 
-LLMs fail in production in two distinct ways: **structural** (return malformed JSON, wrap in markdown fences, hallucinate prose) and **semantic** (return valid JSON but with an invented category outside the allowed enum). Most fallback patterns handle the first and crash on the second. This pattern handles both, with deterministic recovery at every layer.
+LLMs fail in two distinct ways: **structural** (return malformed JSON, wrap in markdown fences, hallucinate prose) and **semantic** (return valid JSON but with an invented category outside the allowed enum). Most fallback patterns handle the first and crash on the second. This pattern handles both, with deterministic recovery at every layer.
 
 **Layer 1 — Structured Output Parser worked (happy path).** Object comes through clean, parser already validated against schema.
 
@@ -357,80 +355,47 @@ flowchart TD
 
 ---
 
-## Real n8n gotchas (with workarounds)
+## Defense in depth — 9 safety layers
 
-These cost me debugging time. Documenting so you don't repeat them.
+Production email systems fail in many ways. A single point of failure between Gmail trigger and audit log can mean a lost lead, a missed legal deadline, or a frustrated client. This system layers safety mechanisms at four levels — code, node, workflow, and notification — so when any one mechanism fails, others catch the consequence.
 
-### `Wait` node with `resume: webhook` hangs forever without explicit timeout
+The 9 layers are not theoretical — every one is implemented in the workflow JSON files in this repo. Below: what each layer does, why it exists, and where to find it.
 
-**Symptom:** Approval flows that never receive a webhook callback stay open indefinitely. Zombie executions accumulate, eventually exhaust workflow concurrency.
+### Layers grouped by level
 
-**Cause:** Default `Wait` node config doesn't set a maximum wait — it's literally "wait until called or until heat death of the universe."
+| # | Level | Layer | Mechanism | Where in code |
+|---|---|---|---|---|
+| 1 | **Code** | Idempotency cache | 500-entry messageId cache in `$getWorkflowStaticData` — duplicates skipped before any side-effect | [`Validate Email`](workflows/01-email-triage-main.json) Code node — see [code pattern](#idempotency-cache-without-external-db) |
+| 2 | **Code** | 4-layer AI parsing fallback | Schema → markdown parser → semantic graceful degradation → keyword classifier | [`Validate and Route`](workflows/01-email-triage-main.json) Code node — see [code pattern](#four-layer-ai-parsing-fallback) |
+| 3 | **Node** | Per-service retry policies | Sheets 3×/2s, Slack 3×/3s, Slack alerts 3×/5s — differentiated by service characteristics | 6 nodes in MAIN, 2 in EXTENDED, 1 in ERROR — `retryOnFail` parameters in workflow JSON |
+| 4 | **Node** | Graceful degradation on side effects | `onError: continueRegularOutput` on non-critical nodes — single failure doesn't abort downstream flow | 15 nodes in MAIN, 9 in EXTENDED, 2 in ERROR |
+| 5 | **Workflow** | Mark as Read at end of flow | Email stays unread until all side effects complete — mid-flow failure → re-processed on next Gmail poll | [`Gmail - Mark as Read`](workflows/01-email-triage-main.json) at position 18/33, after Slack/Drafts/Approval kick-off |
+| 6 | **Workflow** | Wait timeout (2 days) | `limitWaitTime` on approval webhook — flow can't hang indefinitely waiting for human decision | [`Wait - Decision`](workflows/01-email-triage-main.json) — see [gotcha note](#wait-node-with-resume-webhook-hangs-forever-without-explicit-timeout) |
+| 7 | **Workflow** | Dedicated Error Handler workflow | `errorWorkflow` binding on MAIN and EXTENDED — any unhandled crash triggers Error Handler automatically | `settings.errorWorkflow` in both [main](workflows/01-email-triage-main.json) and [extended](workflows/02-email-triage-extended.json) |
+| 8 | **Notification** | Severity classification | Regex on error message → HIGH 🔴 (ECONNREFUSED, timeout, 503) / MEDIUM 🟡 / LOW 🟠 (parse, validation, FALLBACK) | [`Format Error Alert`](workflows/03-email-triage-error-handler.json) Code node — see [code pattern](#severity-classification-in-error-workflow) |
+| 9 | **Notification** | Dual-channel alerting | Slack primary + Gmail backup — Slack outage doesn't silence error notifications | [`03-email-triage-error-handler.json`](workflows/03-email-triage-error-handler.json) — Format Error Alert forks to both channels |
 
-**Fix:** Set `limitWaitTime: true` with explicit interval. After the timeout fires, Wait emits empty data downstream — handle that branch as a timeout case.
+### What this looks like in failure scenarios
 
-```json
-{
-  "parameters": {
-    "resume": "webhook",
-    "limitWaitTime": true,
-    "limitType": "afterTimeInterval",
-    "resumeAmount": 2,
-    "resumeUnit": "days"
-  }
-}
-```
+The 9 layers above describe *how* the system is defended. The table below describes *what happens* when specific components fail — which is what operators actually need to know:
 
-After 2 days without webhook, Wait fires its OUT branch with empty data. Downstream `Parse Decision` detects this (empty webhook payload) and routes to timeout handler → Slack alert to team. No more zombie executions.
+| Failure scenario | Layers that catch it | Outcome |
+|---|---|---|
+| OpenAI API doesn't respond | #2 (4-layer fallback) → #3 (retry) → #7 (Error Handler) | Keyword fallback categorizes email; Slack notification fires with `_parseError: true` flag; admin alert via #8/#9 |
+| Gmail API fails on label/draft | #4 (`onError: continueRegularOutput`) → #5 (Mark as Read) | Flow continues; email stays unread; next Gmail poll re-processes |
+| Slack credentials revoked | #3 (retry 3×) → #4 (`onError`) → #9 (Gmail backup) | Draft already in Gmail; admin still gets alert via Gmail backup channel |
+| Google Sheets unavailable | #3 (retry 3× with 2s delay) → #7 (Error Handler) | After 6s of retries, Error Handler triggers Slack + Gmail alerts |
+| Duplicate email (Gmail re-poll, retry) | #1 (idempotency cache) | Second run returns `[]` from `Validate Email` — no Slack DM, no draft, no audit log entry |
+| Empty subject / body | Code-level validation in `Validate Email` | Subject = `(brak tematu)`, body = `(brak treści)`; AI categorizes best-effort |
+| Email body very long (token overflow risk) | Code-level truncation to `body_limit` (default 3000 chars) | AI gets truncated body; cost stays bounded |
+| Approval timeout (nobody clicks for 2 days) | #6 (Wait limitWaitTime) | Slack timeout alert fires automatically; team knows draft needs review |
+| Error Handler itself fails | #9 (dual-channel) | If Slack OAuth dies, Gmail backup still delivers alert. If both die, n8n execution log is last line |
 
-### Merge node `chooseBranch` mode bug with 3 inputs
+### Why this matters
 
-**Symptom:** Merge node configured with `numberInputs: 3` and `mode: chooseBranch` doesn't generate the 3rd input slot in UI. Workflow runs but silently drops the 3rd input.
+Every layer addresses a specific failure mode that occurred in development or testing — not theoretical. Layer 1 (idempotency) was added after observing duplicate Slack notifications during n8n retries. Layer 4 (`onError: continueRegularOutput`) was added after a Gmail label rate limit caused full workflow abort. Layer 9 (dual-channel) was added after a Slack OAuth refresh failed and an error went unnoticed for 6 hours.
 
-**Tried:** Mode switching (combine, append) — semantics wrong. Merge v2 vs v3 — same bug.
-
-**Workaround:** Serial chain instead of parallel — `Load Zespol → Load Config → Load Kategorie`. Adds ~1.5s latency at 20 emails/day = invisible to user.
-
-See [ADR-009](docs/design-decisions.md#adr-009) for full context.
-
-### Slack node v2.4 silent rejection
-
-**Symptom:** Slack node validates as OK in UI, runs without error, but messages never arrive. Logs show `"invalid operation"` deeply nested.
-
-**Cause:** Slack v2.4 requires explicit `resource: "message"` and `operation: "post"` parameters. Defaults are `chat`/`postMessage` which the validator rejects but doesn't surface clearly.
-
-**Fix:**
-```json
-{
-  "parameters": {
-    "resource": "message",
-    "operation": "post",
-    "select": "channel",
-    "channelId": { ... },
-    "text": "..."
-  }
-}
-```
-
-### `$getWorkflowStaticData` resets on instance restart
-
-**Symptom:** Idempotency cache works for hours/days, then suddenly stops skipping duplicates.
-
-**Cause:** n8n auto-updates trigger instance restart. Static data is in-memory only.
-
-**Workaround for higher durability:** Migrate to Sheets lookup (planned in v7 roadmap). For current scale (20 emails/day), occasional restart = ~10 min vulnerability window per week. Acceptable.
-
-### `promptType: "define"` in LangChain chains
-
-**Symptom:** AI chain seems to use input data from earlier nodes, producing nonsensical responses.
-
-**Fix:** Set `promptType: "define"` explicitly in chain config — forces explicit prompt definition instead of inferring from input. Default mode gets messy in multi-step flows.
-
-### `onError: continueRegularOutput` placement
-
-**Where to use:** Non-critical mutations (Gmail labels, Slack messages). Failure here = degraded experience but flow continues.
-
-**Where NOT to use:** Validation, AI, routing, audit log. Failure here = silent corruption of downstream behavior. Throw with enriched message → let `errorWorkflow` handle.
+For the architectural rationale of each decision, see [`docs/design-decisions.md`](docs/design-decisions.md).
 
 ---
 
@@ -464,42 +429,6 @@ Test data + replay instructions: [`docs/testy/test_emails.json`](docs/testy/test
 
 ---
 
-## Performance characteristics
-
-At 20 emails/day on Hostinger n8n + OpenAI gpt-4o-mini:
-
-| Metric | Value | Notes |
-|---|---|---|
-| End-to-end latency | ~30s p50 | Dominated by AI calls (~10s × 2) |
-| AI cost | ~$1.50/month (~5 zł/m) | gpt-4o-mini, 2 calls per email |
-| Sheets API calls | 4 per email | 3 reads + 1 write (audit log) |
-| Slack messages | 2-3 per email | Channel + DM (+ urgent crisis) |
-| Memory footprint | ~25 KB | Idempotency cache @ 500 IDs × ~50 bytes |
-| Concurrent executions | up to ~20 | Approval flow holds open during 2-day Wait |
-
-For 10× volume (200/day), bottleneck would be OpenAI rate limits — addressable with queue node or batch classifier.
-
----
-
-## Extending the system
-
-The system is designed to be modified by **operator**, not developer:
-
-| Change | Where | Deploy needed |
-|---|---|---|
-| Add new category | New row in `Kategorie` + `Zespół` Sheets | No |
-| Reassign team member | Edit `Zespół` row | No |
-| Change AI prompt context | Edit `Kategorie.opis_dla_ai` | No |
-| Change tone of voice | Edit `Kategorie.ton_odpowiedzi` | No |
-| Adjust truncation/limits | Edit `Konfiguracja` | No |
-| Add new Slack channel | Create channel + update `Konfiguracja` | No |
-| Modify routing logic | Code change in `Validate and Route` | Yes |
-| Add new external integration | New workflow + webhook trigger | Yes |
-| Change AI provider | Replace OpenAI node with alternative | Yes |
-
-This separation is the core architectural decision. See [ADR-002](docs/design-decisions.md#adr-002) for full rationale.
-
----
 
 ## Quick start
 
@@ -540,12 +469,10 @@ Full step-by-step: [`docs/SETUP.md`](docs/SETUP.md)
 │   ├── 02-email-triage-extended.json     24 nodes (23 functional + 1 sticky), webhook trigger
 │   └── 03-email-triage-error-handler.json 5 nodes (4 functional + 1 sticky), error trigger
 ├── docs/
-│   ├── design-decisions.md               10 ADRs in immutable format
+│   ├── design-decisions_ADR.md               10 ADRs in immutable format
 │   ├── google-sheets-schema.md           Schema for 4 config tabs
 │   ├── google-sheets-template.xlsx       Pre-filled template, importable to Google Sheets
 │   ├── SETUP.md                          Step-by-step deployment
-│   ├── architecture.md                   Data flow + Mermaid diagrams                  (coming soon)
-│   ├── workflow-map-embed-guide.md       How to embed presentation/ in Notion/YouTube  (coming soon)
 │   ├── prompts/
 │   │   ├── README.md                     Prompt versioning policy
 │   │   ├── categorize-v1-production.md   Active classifier prompt
@@ -557,25 +484,8 @@ Full step-by-step: [`docs/SETUP.md`](docs/SETUP.md)
 │       ├── test_cases.md                 33 test cases (executable spec)
 │       ├── test_emails.json              24 test scenarios (input data)
 │       └── test_results_2026-04-08.md    24/24 pass full pipeline
-├── presentation/                                                                       (coming soon)
-│   ├── workflow-map.jsx                  React component for client demos
-│   └── README.md
-└── screenshots/                                                                        (coming soon)
+
 ```
-
----
-
-## Roadmap (v7)
-
-- [ ] Migrate idempotency cache: static data → Sheets lookup (durability)
-- [ ] Replace `STARRED` with custom Gmail labels per team for urgent
-- [ ] Conditional approval flow (skip for low-risk: spam, system messages)
-- [ ] Workflow-level rate limiting (queue node) for OpenAI burst protection
-- [ ] Cache config loading (1× per execution batch instead of 3× per email)
-- [ ] Vision API for attachment analysis (invoices → auto-extract amount, CVs → skill match)
-- [ ] CRM lookup before classification (boost urgency for key accounts)
-- [ ] Auto-detect email language, generate draft in same language
-
 ---
 
 ## Documentation index
@@ -584,16 +494,13 @@ Full step-by-step: [`docs/SETUP.md`](docs/SETUP.md)
 |---|---|---|---|
 | [`README.md`](README.md) | Code reference (this file) | Developer | Live |
 | [`docs/SETUP.md`](docs/SETUP.md) | Step-by-step deployment | DevOps | Live |
-| [`docs/design-decisions.md`](docs/design-decisions.md) | 10 ADRs with full context | Senior reviewer | Live |
+| [`docs/design-decisions_ADR.md`](docs/design-decisions.md) | 10 ADRs with full context | Senior reviewer | Live |
 | [`docs/google-sheets-schema.md`](docs/google-sheets-schema.md) | Sheet tabs reference | Operator | Live |
 | [`docs/google-sheets-template.xlsx`](docs/google-sheets-template.xlsx) | Pre-filled template, importable to Google Sheets | Operator | Live |
 | [`docs/prompts/`](docs/prompts/) | Prompt versioning + A/B test methodology | AI engineer / Senior reviewer | Live |
 | [`docs/testy/test_cases.md`](docs/testy/test_cases.md) | Test specification (33 cases) | QA / Senior reviewer | Live |
 | [`docs/testy/test_results_2026-04-08.md`](docs/testy/test_results_2026-04-08.md) | Test execution report | QA | Live |
 | [`workflows/README.md`](workflows/README.md) | Sanitization disclosure + placeholder reference | Security reviewer | Live |
-| [`docs/architecture.md`](docs/architecture.md) | Data flow + Mermaid diagrams | Engineer | Coming soon |
-| [`docs/workflow-map-embed-guide.md`](docs/workflow-map-embed-guide.md) | Embedding presentation/ asset | Marketing | Coming soon |
-| [`presentation/`](presentation/) | React component for client demos | Stakeholder | Coming soon |
 
 ---
 
@@ -601,13 +508,3 @@ Full step-by-step: [`docs/SETUP.md`](docs/SETUP.md)
 
 - **Workflow JSON:** MIT — adapt for your project
 - **Documentation:** CC BY 4.0 — share with attribution
-
----
-
-## Contact
-
-Available for AI Integration / Workflow Engineering / Automation Engineering roles.
-
-- 📖 [Notion portfolio (this project's case study)](#)
-- 💼 [LinkedIn](#)
-- 🌍 Polish + English, remote / hybrid (based in Warsaw, PL)
