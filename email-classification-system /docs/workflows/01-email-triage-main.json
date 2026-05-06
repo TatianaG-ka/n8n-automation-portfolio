@@ -1,0 +1,1363 @@
+{
+  "name": "Email Triage - v6.1 PRODUCTION",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyX",
+              "value": 1,
+              "unit": "minutes"
+            }
+          ]
+        },
+        "filters": {
+          "readStatus": "unread"
+        }
+      },
+      "id": "00000000-0000-0000-0000-000000000112",
+      "name": "Gmail Trigger",
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -2720,
+        512
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "CRED_ID_REPLACE_AFTER_IMPORT_4",
+          "name": "Gmail OAuth - REPLACE_AFTER_IMPORT"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "list",
+          "cachedResultName": "Baza_danych"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Zespół"
+        },
+        "options": {}
+      },
+      "id": "00000000-0000-0000-0000-000000000103",
+      "name": "Load Zespol",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -2480,
+        512
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "CRED_ID_REPLACE_AFTER_IMPORT_5",
+          "name": "Google Sheets OAuth - REPLACE_AFTER_IMPORT"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "list",
+          "cachedResultName": "Baza_danych"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 933346257,
+          "mode": "list",
+          "cachedResultName": "Konfiguracja"
+        },
+        "options": {}
+      },
+      "id": "00000000-0000-0000-0000-000000000105",
+      "name": "Load Config",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -2288,
+        512
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "CRED_ID_REPLACE_AFTER_IMPORT_5",
+          "name": "Google Sheets OAuth - REPLACE_AFTER_IMPORT"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "list",
+          "cachedResultName": "Baza_danych"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 2050512143,
+          "mode": "list",
+          "cachedResultName": "Kategorie"
+        },
+        "options": {}
+      },
+      "id": "00000000-0000-0000-0000-000000000107",
+      "name": "Load Kategorie",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -2080,
+        512
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "executeOnce": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "CRED_ID_REPLACE_AFTER_IMPORT_5",
+          "name": "Google Sheets OAuth - REPLACE_AFTER_IMPORT"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "try {\n  const items = $('Gmail Trigger').all();\n  const configRows = $('Load Config').all();\n  const config = {};\n  for (const row of configRows) {\n    config[row.json.klucz] = row.json.wartosc;\n  }\n  const BODY_LIMIT = parseInt(config.body_limit) || 3000;\n  const SUBJECT_LIMIT = parseInt(config.subject_limit) || 200;\n\n  // === IDEMPOTENCY CHECK ===\n  // Cache 500 ostatnich messageId w workflow static data\n  // Chroni przed duplikatami przy re-trigger lub powtórnym pollu Gmail\n  const staticData = $getWorkflowStaticData('global');\n  if (!Array.isArray(staticData.processedIds)) staticData.processedIds = [];\n\n  const results = [];\n  let skippedDuplicates = 0;\n\n  for (const item of items) {\n    const email = item.json;\n    const messageId = email.id || email.messageId || '';\n\n    // Skip duplikatów (idempotency guard)\n    if (messageId && staticData.processedIds.includes(messageId)) {\n      skippedDuplicates++;\n      continue;\n    }\n\n    const subject = (email.subject || email.Subject || '').trim();\n    const textBody = (email.body || email.textPlain || email.text || email.snippet || '').trim();\n    const htmlBody = (email.textHtml || email.html || '').trim();\n    const body = textBody || htmlBody.replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/\\s+/g, ' ').trim();\n    const rawFrom = email.From || email.from || '';\n    const from = (typeof rawFrom === 'string') ? rawFrom.replace(/.*<(.+)>.*/, '$1').trim() : (rawFrom?.value?.[0]?.address || '');\n    const fromName = (typeof rawFrom === 'string') ? rawFrom.replace(/<.*>/, '').replace(/\"/g, '').trim() : (rawFrom?.value?.[0]?.name || '');\n    const threadId = email.threadId || '';\n    const date = email.date || email.Date || new Date().toISOString();\n\n    if (!from) {\n      throw new Error(`Email validation failed: brak adresu nadawcy. MessageId: ${messageId}`);\n    }\n\n    // Mark as processed AFTER validation passes (clean state on early throws)\n    if (messageId) {\n      staticData.processedIds.push(messageId);\n      // Keep only last 500 entries to prevent unbounded growth\n      if (staticData.processedIds.length > 500) {\n        staticData.processedIds = staticData.processedIds.slice(-500);\n      }\n    }\n\n    const hasContent = subject || body;\n    results.push({\n      json: {\n        messageId,\n        threadId,\n        subject: subject.substring(0, SUBJECT_LIMIT) || '(brak tematu)',\n        body: body.substring(0, BODY_LIMIT) || '(brak treści)',\n        bodyLength: body.length,\n        from,\n        fromName,\n        date,\n        isEmpty: !hasContent,\n        isTruncated: body.length > BODY_LIMIT\n      }\n    });\n  }\n\n  if (skippedDuplicates > 0) {\n    console.log(`[Validate Email] Skipped ${skippedDuplicates} duplicate messageId(s) via idempotency cache`);\n  }\n\n  return results;\n} catch (error) {\n  const enriched = new Error(`[Validate Email] ${error.message}`);\n  enriched.description = `Node: Validate Email\\nOriginal: ${error.message}`;\n  throw enriched;\n}"
+      },
+      "id": "00000000-0000-0000-0000-000000000101",
+      "name": "Validate Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1888,
+        512
+      ]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4o-mini",
+          "cachedResultName": "gpt-4o-mini"
+        },
+        "responsesApiEnabled": false,
+        "options": {
+          "maxTokens": 500,
+          "temperature": 0.1
+        }
+      },
+      "id": "00000000-0000-0000-0000-000000000100",
+      "name": "OpenAI Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        -1680,
+        736
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "CRED_ID_REPLACE_AFTER_IMPORT_2",
+          "name": "OpenAI - REPLACE_AFTER_IMPORT"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"category\": { \"type\": \"string\" },\n    \"urgency\": { \"type\": \"string\", \"enum\": [\"pilne\", \"normalne\"] },\n    \"summary\": { \"type\": \"string\" },\n    \"key_entities\": { \"type\": \"array\", \"items\": { \"type\": \"string\" } },\n    \"urgency_reason\": { \"type\": \"string\" }\n  },\n  \"required\": [\"category\", \"urgency\", \"summary\"]\n}"
+      },
+      "id": "00000000-0000-0000-0000-000000000104",
+      "name": "Structured Output Parser",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        -1504,
+        736
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "addLabels",
+        "messageId": "={{ $json.messageId }}",
+        "labelIds": "={{ $json.gmailLabelId }}"
+      },
+      "id": "00000000-0000-0000-0000-000000000119",
+      "name": "Gmail - Add Label",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        -1040,
+        512
+      ],
+      "webhookId": "00000000-0000-0000-0000-000000000009",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "CRED_ID_REPLACE_AFTER_IMPORT_4",
+          "name": "Gmail OAuth - REPLACE_AFTER_IMPORT"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "notes": "continueOnFail: label might not exist yet"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4o-mini",
+          "cachedResultName": "gpt-4o-mini"
+        },
+        "responsesApiEnabled": false,
+        "options": {
+          "maxTokens": 600,
+          "temperature": 0.4
+        }
+      },
+      "id": "00000000-0000-0000-0000-000000000102",
+      "name": "OpenAI Chat Model Draft",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        -832,
+        720
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "CRED_ID_REPLACE_AFTER_IMPORT_2",
+          "name": "OpenAI - REPLACE_AFTER_IMPORT"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "draft",
+        "subject": "=Re: {{ $('Validate and Route').first().json.subject }}",
+        "message": "={{ $json.text || $json.output || $json.response || 'Nie udało się wygenerować draftu.' }}",
+        "options": {
+          "threadId": "={{ $('Validate and Route').first().json.threadId }}",
+          "sendTo": "={{ $('Validate and Route').first().json.from }}"
+        }
+      },
+      "id": "00000000-0000-0000-0000-000000000133",
+      "name": "Gmail - Create Draft",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        -528,
+        512
+      ],
+      "webhookId": "00000000-0000-0000-0000-000000000006",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "CRED_ID_REPLACE_AFTER_IMPORT_4",
+          "name": "Gmail OAuth - REPLACE_AFTER_IMPORT"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "notes": "continueOnFail: draft failure should not block notifications"
+    },
+    {
+      "parameters": {
+        "jsCode": "try {\nconst routeData = $('Validate and Route').first().json;\nconst draftRaw = $('AI Generate Draft').first().json;\nconst draftText = draftRaw.text || draftRaw.output || draftRaw.response || 'Nie udało się wygenerować draftu';\n\nconst categoryLabel = routeData.categoryLabel;\nconst urgencyIcon = routeData.isUrgent ? '🔴 PILNE' : '🟢 Normalne';\n\nlet warnings = [];\ntry {\n  if ($('Gmail - Add Label').first().json.error) warnings.push('⚠ ️ Nie udało się dodać etykiety');\n} catch(e) { warnings.push('⚠ ️ Nie udało się dodać etykiety'); }\ntry {\n  if ($('Gmail - Create Draft').first().json.error) warnings.push('⚠ ️ Nie udało się utworzyć draftu');\n} catch(e) { warnings.push('⚠ ️ Nie udało się utworzyć draftu'); }\nif (routeData._parseError) {\n  warnings.push('⚠ ️ AI fallback â€” kategoria na podstawie słów kluczowych');\n}\nconst warningText = warnings.length > 0 ? '\\n' + warnings.join('\\n') : '';\n\nconst msg = `${routeData.isUrgent ? '🔴 **PILNE** 🔴\\n' : ''}**${categoryLabel}** | ${urgencyIcon}\n\n**Od:** ${routeData.fromName} <${routeData.from}>\n**Temat:** ${routeData.subject}\n**Przypisano:** ${routeData.assignedPerson} (${routeData.assignedRole})\n\n**Podsumowanie:**\n${routeData.summary}\n${routeData.isUrgent ? '\\n**Powód pilności:** ' + routeData.urgencyReason : ''}${warningText}\n\n---\n**Draft odpowiedzi:**\n${draftText.substring(0, 1500)}`;\n\nreturn [{\n  json: { ...routeData, draftText, notificationMessage: msg, warnings }\n}];\n} catch (error) {\n  return [{\n    json: {\n      _error: true, _errorNode: 'Format Notification',\n      _errorMessage: error.message,\n      ...($input.first()?.json || {})\n    }\n  }];\n}"
+      },
+      "id": "00000000-0000-0000-0000-000000000114",
+      "name": "Format Notification",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -240,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "urgency-check",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "leftValue": "={{ $json.isUrgent }}",
+              "rightValue": ""
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "00000000-0000-0000-0000-000000000121",
+      "name": "Is Urgent?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        0,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "=pilne",
+          "mode": "name"
+        },
+        "text": "={{ $json.notificationMessage }}",
+        "otherOptions": {
+          "mrkdwn": true,
+          "unfurl_links": false
+        }
+      },
+      "id": "00000000-0000-0000-0000-000000000132",
+      "name": "Slack - URGENT Channel",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.4,
+      "position": [
+        288,
+        224
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "webhookId": "00000000-0000-0000-0000-000000000008",
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "CRED_ID_REPLACE_AFTER_IMPORT_3",
+          "name": "Slack OAuth - REPLACE_AFTER_IMPORT"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "addLabels",
+        "messageId": "={{ $json.messageId }}",
+        "labelIds": [
+          "STARRED"
+        ]
+      },
+      "id": "00000000-0000-0000-0000-000000000126",
+      "name": "Gmail - Label PILNE",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        288,
+        48
+      ],
+      "webhookId": "00000000-0000-0000-0000-000000000003",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "CRED_ID_REPLACE_AFTER_IMPORT_4",
+          "name": "Gmail OAuth - REPLACE_AFTER_IMPORT"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "notes": "Adds STARRED as urgent marker. Replace with custom label ID if available."
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $json._config.normal_channel || 'general' }}"
+        },
+        "text": "={{ $json.notificationMessage }}",
+        "otherOptions": {
+          "mrkdwn": true,
+          "unfurl_links": false
+        }
+      },
+      "id": "00000000-0000-0000-0000-000000000120",
+      "name": "Slack - Normal Channel",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.4,
+      "position": [
+        288,
+        432
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "webhookId": "00000000-0000-0000-0000-000000000021",
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "CRED_ID_REPLACE_AFTER_IMPORT_3",
+          "name": "Slack OAuth - REPLACE_AFTER_IMPORT"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "try {\n// Read from Format Notification (not $input which comes from Slack channel nodes with onError)\nconst data = $('Format Notification').first().json;\nconst assignedSlackId = data.assignedSlackUserId;\n\nif (!assignedSlackId) {\n  throw new Error(`Brak Slack ID dla: ${data.assignedPerson}. Uzupełnij slack_user_id w arkuszu Zespół.`);\n}\n\nconst crisisSlackId = data.crisisManager?.slackUserId || '';\n\nconst slackMessage = `${data.isUrgent ? '🔴 PILNE â€” ' : ''}**${data.categoryLabel}**\n\n**Od:** ${data.fromName} <${data.from}>\n**Temat:** ${data.subject}\n**Podsumowanie:** ${data.summary}\n${data.isUrgent ? '**Powód pilności:** ' + data.urgencyReason : ''}\n\nDraft odpowiedzi zapisany w Gmail â€” przejrzyj i wyślij ręcznie.`;\n\nconst result = [{\n  json: { ...data, slackUserId: assignedSlackId, slackMessage }\n}];\n\nif (data.isUrgent && crisisSlackId && crisisSlackId !== assignedSlackId) {\n  result.push({\n    json: {\n      ...data, slackUserId: crisisSlackId,\n      slackMessage: `🔴 **PILNA SPRAWA â€” wymagana natychmiastowa reakcja!**\\n\\n${slackMessage}`\n    }\n  });\n}\nreturn result;\n} catch (error) {\n  const enriched = new Error(`[Prepare Slack DM] ${error.message}`);\n  enriched.description = `Node: Prepare Slack DM\\nOriginal: ${error.message}`;\n  throw enriched;\n}"
+      },
+      "id": "00000000-0000-0000-0000-000000000106",
+      "name": "Prepare Slack DM",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        560,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "select": "user",
+        "user": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $json.slackUserId }}"
+        },
+        "text": "={{ $json.slackMessage }}",
+        "otherOptions": {
+          "mrkdwn": true,
+          "unfurl_links": false
+        }
+      },
+      "id": "00000000-0000-0000-0000-000000000128",
+      "name": "Slack - Worker DM",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.4,
+      "position": [
+        800,
+        304
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "webhookId": "00000000-0000-0000-0000-000000000011",
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "CRED_ID_REPLACE_AFTER_IMPORT_3",
+          "name": "Slack OAuth - REPLACE_AFTER_IMPORT"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "notes": "DM to assigned worker. For urgent: also DMs crisis manager (2nd item from Prepare Slack DM)."
+    },
+    {
+      "parameters": {
+        "operation": "markAsRead",
+        "messageId": "={{ $json.messageId }}"
+      },
+      "id": "00000000-0000-0000-0000-000000000131",
+      "name": "Gmail - Mark as Read",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1040,
+        304
+      ],
+      "webhookId": "00000000-0000-0000-0000-000000000017",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "CRED_ID_REPLACE_AFTER_IMPORT_4",
+          "name": "Gmail OAuth - REPLACE_AFTER_IMPORT"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "notes": "Moved to END of flow â€” email stays unread until fully processed"
+    },
+    {
+      "parameters": {
+        "jsCode": "try {\nconst routeData = $('Validate and Route').first().json;\nconst draftRaw = $('AI Generate Draft').first().json;\nconst draftText = draftRaw.text || draftRaw.output || draftRaw.response || 'Nie udalo sie wygenerowac draftu';\nconst resumeUrl = $execution.resumeUrl;\n\nconst approvalHtml = `<html><body style=\"font-family:sans-serif;max-width:600px;margin:auto;padding:20px;\">\n<h2 style=\"color:#2E75B6;\">${routeData.isUrgent ? '\\ud83d\\udd34 PILNE \\u2014 ' : '\\ud83d\\udce7 '}Draft do zatwierdzenia</h2>\n<div style=\"background:#f5f5f5;padding:15px;border-radius:8px;margin:10px 0;border-left:4px solid #2E75B6;\">\n  <p><strong>Od:</strong> ${routeData.fromName} &lt;${routeData.from}&gt;</p>\n  <p><strong>Temat:</strong> ${routeData.subject}</p>\n  <p><strong>Kategoria:</strong> ${routeData.categoryLabel || routeData.category}</p>\n  <p><strong>Pilnosc:</strong> ${routeData.isUrgent ? '\\ud83d\\udd34 PILNE' : '\\ud83d\\udfe2 Normalne'}</p>\n  <p><strong>Podsumowanie:</strong> ${routeData.summary}</p>\n</div>\n<h3>Draft odpowiedzi:</h3>\n<div style=\"background:#fafafa;border:1px solid #ddd;padding:15px;border-radius:8px;white-space:pre-wrap;\">${draftText.substring(0, 2000)}</div>\n<div style=\"margin:20px 0;text-align:center;\">\n  <a href=\"${resumeUrl}?action=zatwierdz\" style=\"display:inline-block;background:#16a34a;color:white;padding:12px 24px;border-radius:8px;text-decoration:none;margin:5px;font-weight:bold;\">\\u2705 Zatwierdz i wyslij</a>\n  <a href=\"${resumeUrl}?action=popraw\" style=\"display:inline-block;background:#d97706;color:white;padding:12px 24px;border-radius:8px;text-decoration:none;margin:5px;font-weight:bold;\">\\u270f\\ufe0f Do poprawki</a>\n  <a href=\"${resumeUrl}?action=odrzuc\" style=\"display:inline-block;background:#dc2626;color:white;padding:12px 24px;border-radius:8px;text-decoration:none;margin:5px;font-weight:bold;\">\\u274c Odrzuc</a>\n</div>\n<p style=\"color:#999;font-size:11px;text-align:center;\">Email Triage System \\u2014 draft wymaga zatwierdzenia przed wyslaniem</p>\n</body></html>`;\n\nreturn [{\n  json: {\n    ...routeData,\n    draftText,\n    approvalHtml,\n    approvalSubject: '\\ud83d\\udccb Draft do zatwierdzenia: ' + routeData.subject,\n    originalFrom: routeData.from,\n    originalSubject: routeData.subject,\n    originalMessageId: routeData.messageId\n  }\n}];\n} catch (error) {\n  return [{ json: { ...($input.first()?.json || {}), _error: true, _errorMessage: error.message } }];\n}"
+      },
+      "id": "00000000-0000-0000-0000-000000000115",
+      "name": "Prepare Approval Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -240,
+        704
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.assignedEmail || 'your-admin@example.com' }}",
+        "subject": "={{ $json.approvalSubject }}",
+        "message": "={{ $json.approvalHtml }}",
+        "options": {}
+      },
+      "id": "00000000-0000-0000-0000-000000000129",
+      "name": "Gmail - Send Approval",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        0,
+        704
+      ],
+      "webhookId": "00000000-0000-0000-0000-000000000014",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "CRED_ID_REPLACE_AFTER_IMPORT_4",
+          "name": "Gmail OAuth - REPLACE_AFTER_IMPORT"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "resume": "webhook",
+        "options": {},
+        "limitWaitTime": true,
+        "limitType": "afterTimeInterval",
+        "resumeAmount": 2,
+        "resumeUnit": "days"
+      },
+      "id": "00000000-0000-0000-0000-000000000109",
+      "name": "Wait - Decision",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        240,
+        704
+      ],
+      "webhookId": "00000000-0000-0000-0000-000000000002"
+    },
+    {
+      "parameters": {
+        "jsCode": "try {\nconst webhookData = $input.first().json;\nconst prevData = $('Prepare Approval Email').first().json;\n\n// Read action from query parameter (e.g. ?action=zatwierdz)\nconst query = webhookData.query || webhookData.req?.query || {};\nconst action = query.action || 'unknown';\n\n// Check timeout (no webhook data = expired)\nconst isTimeout = !webhookData.req && !webhookData.query && !query.action;\n\nreturn [{\n  json: {\n    ...prevData,\n    decision: isTimeout ? 'timeout' : action,\n    isApproved: action === 'zatwierdz',\n    decidedAt: new Date().toISOString()\n  }\n}];\n} catch (error) {\n  return [{ json: { ...($input.first()?.json || {}), decision: 'error', _errorMessage: error.message } }];\n}"
+      },
+      "id": "00000000-0000-0000-0000-000000000127",
+      "name": "Parse Decision",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        704
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "timeout-check",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              },
+              "leftValue": "={{ $json.decision }}",
+              "rightValue": "timeout"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "00000000-0000-0000-0000-000000000116",
+      "name": "Is Timeout?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        720,
+        704
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "your-channel-name"
+        },
+        "text": "=⏰ *TIMEOUT — draft nie zatwierdzony*\n\nTemat: {{ $json.originalSubject }}\nOd: {{ $json.originalFrom }}\nPrzypisano: {{ $json.assignedPerson }}\n\nDraft wygasł po 2 dniach. Sprawdź Gmail.",
+        "otherOptions": {
+          "mrkdwn": true
+        }
+      },
+      "id": "00000000-0000-0000-0000-000000000108",
+      "name": "Slack - Timeout Alert",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.4,
+      "position": [
+        960,
+        608
+      ],
+      "webhookId": "00000000-0000-0000-0000-000000000001",
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "CRED_ID_REPLACE_AFTER_IMPORT_3",
+          "name": "Slack OAuth - REPLACE_AFTER_IMPORT"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "approved",
+                    "leftValue": "={{ $json.decision }}",
+                    "rightValue": "zatwierdz",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Zatwierdz"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "revise",
+                    "leftValue": "={{ $json.decision }}",
+                    "rightValue": "popraw",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Popraw"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "reject",
+                    "leftValue": "={{ $json.decision }}",
+                    "rightValue": "odrzuc",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Odrzuc"
+            }
+          ]
+        },
+        "options": {
+          "allMatchingOutputs": false
+        }
+      },
+      "id": "00000000-0000-0000-0000-000000000125",
+      "name": "Switch - Decision",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        960,
+        800
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "reply",
+        "messageId": "={{ $json.originalMessageId }}",
+        "emailType": "text",
+        "message": "={{ $json.draftText }}",
+        "options": {}
+      },
+      "id": "00000000-0000-0000-0000-000000000118",
+      "name": "Gmail - Send to Client",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1248,
+        704
+      ],
+      "webhookId": "00000000-0000-0000-0000-000000000013",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "CRED_ID_REPLACE_AFTER_IMPORT_4",
+          "name": "Gmail OAuth - REPLACE_AFTER_IMPORT"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "your-channel-name"
+        },
+        "text": "=✅ Draft zatwierdzony i wysłany do {{ $json.originalFrom }}\nTemat: {{ $json.originalSubject }}",
+        "otherOptions": {
+          "mrkdwn": true
+        }
+      },
+      "id": "00000000-0000-0000-0000-000000000111",
+      "name": "Slack - Approved",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.4,
+      "position": [
+        1520,
+        704
+      ],
+      "webhookId": "00000000-0000-0000-0000-000000000019",
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "CRED_ID_REPLACE_AFTER_IMPORT_3",
+          "name": "Slack OAuth - REPLACE_AFTER_IMPORT"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "select": "user",
+        "user": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $json.assignedSlackUserId }}"
+        },
+        "text": "=✏️ *Draft wymaga poprawki*\nTemat: {{ $json.originalSubject }}\nOd: {{ $json.fromName }} <{{ $json.originalFrom }}>\nOtwórz draft w Gmail i popraw ręcznie.",
+        "otherOptions": {
+          "mrkdwn": true
+        }
+      },
+      "id": "00000000-0000-0000-0000-000000000123",
+      "name": "Slack - Revision Needed",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.4,
+      "position": [
+        1248,
+        880
+      ],
+      "webhookId": "00000000-0000-0000-0000-000000000012",
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "CRED_ID_REPLACE_AFTER_IMPORT_3",
+          "name": "Slack OAuth - REPLACE_AFTER_IMPORT"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "your-channel-name"
+        },
+        "text": "=❌ Draft odrzucony\nTemat: {{ $json.originalSubject }}\nOd: {{ $json.fromName }} <{{ $json.originalFrom }}>",
+        "otherOptions": {
+          "mrkdwn": true
+        }
+      },
+      "id": "00000000-0000-0000-0000-000000000110",
+      "name": "Slack - Rejected",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.4,
+      "position": [
+        1248,
+        1040
+      ],
+      "webhookId": "00000000-0000-0000-0000-000000000020",
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "CRED_ID_REPLACE_AFTER_IMPORT_3",
+          "name": "Slack OAuth - REPLACE_AFTER_IMPORT"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "list"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1416471837,
+          "mode": "list",
+          "cachedResultName": "Historia",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID/edit#gid=1416471837"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "data ": "={{ $('Parse Decision').first().json.decidedAt }}",
+            "email_nadawcy": "={{ $('Parse Decision').first().json.originalFrom || $('Parse Decision').first().json.from }}",
+            "kategoria": "={{ $('Parse Decision').first().json.categoryLabel || $('Parse Decision').first().json.category }}",
+            "temat": "={{ $('Parse Decision').first().json.originalSubject || $('Parse Decision').first().json.subject }}",
+            "decyzja ": "={{ $('Parse Decision').first().json.decision }}",
+            "przypisano ": "={{ $('Parse Decision').first().json.assignedPerson }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "data ",
+              "displayName": "data ",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "email_nadawcy",
+              "displayName": "email_nadawcy",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "kategoria",
+              "displayName": "kategoria",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "temat",
+              "displayName": "temat",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "decyzja ",
+              "displayName": "decyzja ",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "przypisano ",
+              "displayName": "przypisano ",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "id": "00000000-0000-0000-0000-000000000117",
+      "name": "GSheets - Log Decision",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1520,
+        880
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "CRED_ID_REPLACE_AFTER_IMPORT_5",
+          "name": "Google Sheets OAuth - REPLACE_AFTER_IMPORT"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Przeanalizuj poniższy email i zwróć kategoryzację w formacie JSON.\n\n  Temat: {{ $('Validate Email').first().json.subject }}\n  Od: {{ $('Validate Email').first().json.fromName }} <{{ $('Validate Email').first().json.from\n  }}>\n  Data: {{ $('Validate Email').first().json.date }}\n\nTreść: \n{{ $('Validate Email').first().json.body === '(brak treści)' ? '(brak treści - oceń kategorię tylko na podstawie tematu i nadawcy)' :  $('Validate Email').first().json.body }}\n  ---\n  Dostępne kategorie:\n  {{ $('Load Kategorie').all().map(r => r.json.klucz + ' â€” ' + r.json.opis_dla_ai).join('\\n') }}\n\n  Zwróć WYŁĄCZNIE poprawny obiekt JSON z polami:\n  - category: jedna z powyższych kategorii\n  - urgency: \"pilne\" lub \"normalne\"\n  - summary: krótkie podsumowanie maila po polsku (1-2 zdania)\n  - key_entities: tablica kluczowych podmiotów/tematów\n  - urgency_reason: jeśli pilne - uzasadnienie, inaczej pusty string",
+        "hasOutputParser": true,
+        "messages": {
+          "messageValues": [
+            {
+              "message": "=Jesteś ekspertem od kategoryzacji maili w firmie doradczej ({{ $('Load Config').all().find(r =>    r.json.klucz === 'zespol_rozmiar')?.json?.wartosc || '5' }}-osobowy zespół). Analizujesz maile    przychodzące na skrzynkę kontaktową i klasyfikujesz je.    KATEGORIE:   {{ $('Load Kategorie').all().map((r, i) => (i+1) + '. ' + r.json.klucz + ' â€” ' +   r.json.opis_dla_ai).join('\\n') }}    ZASADY PILNOŚCI:   - PILNE: eskalacja od kluczowego klienta, awaria usługi, deadline w ciągu 24h, groźba prawna,   żądanie natychmiastowej interwencji, utrata danych, incydent bezpieczeństwa, windykacja   - NORMALNE: wszystko inne    Zawsze zwracaj WYŁĄCZNIE poprawny JSON. Nie dodawaj żadnego tekstu przed ani po JSON.    Sub-nodes podpięte (ai_languageModel + ai_outputParser):   - OpenAI Chat Model â€” gpt-4o-mini, temperature 0.1, maxTokens 500   - Structured Output Parser â€” schema example:   {     \"category\": \"zapytanie_ofertowe\",     \"urgency\": \"normalne\",     \"summary\": \"Klient pyta o wycenę usług doradczych\",     \"key_entities\": [\"firma X\", \"usługi doradcze\"],     \"urgency_reason\": \"\"   }"
+            }
+          ]
+        },
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.7,
+      "position": [
+        -1680,
+        512
+      ],
+      "id": "00000000-0000-0000-0000-000000000113",
+      "name": "AI Categorize Email",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Przygotuj profesjonalny szkic odpowiedzi na poniższy email.\n\n  Kategoria: {{ $('Validate and Route').first().json.category }}\n  Pilność: {{ $('Validate and Route').first().json.urgency }}\n  Temat: {{ $('Validate and Route').first().json.subject }}\n  Od: {{ $('Validate and Route').first().json.fromName }} <{{ $('Validate and Route').first().json.from }}>\n  Podsumowanie: {{ $('Validate and Route').first().json.summary }}\n\n  Treść oryginalna:\n  {{ $('Validate and Route').first().json.body }}",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "=Jesteś asystentem {{ $('Validate and Route').first().json._config.firma_nazwa || 'firmy   doradczej' }}. Przygotowujesz profesjonalne szkice odpowiedzi na maile.    ZASADY:   - Odpowiedź ZAWSZE po polsku, profesjonalna i uprzejma   - Ton: {{ $('Load Kategorie').all().find(r => r.json.klucz === $('Validate and Route').first().json.category)?.json?.ton_odpowiedzi || 'profesjonalny' }}   - NIE podawaj konkretnych cen, terminów ani zobowiązań   - NIE składaj obietnic â€” to szkic do weryfikacji przez człowieka   - Podpisz jako \"{{ $('Validate and Route').first().json._config.firma_podpis || 'Zespół firmy   doradczej' }}\"   - Na końcu ZAWSZE dodaj: \"\\n\\n[DRAFT - DO WERYFIKACJI PRZED WYSYŁKĄ]\"   - Maksymalnie {{ $('Validate and Route').first().json._config.draft_max_words || '150' }} słów   - Jeśli to spam: napisz tylko \"Sugerowana akcja: brak odpowiedzi (spam). [DRAFT - DO   WERYFIKACJI PRZED WYSYŁKĄ]\""
+            }
+          ]
+        },
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.7,
+      "position": [
+        -864,
+        512
+      ],
+      "id": "00000000-0000-0000-0000-000000000130",
+      "name": "AI Generate Draft"
+    },
+    {
+      "parameters": {
+        "jsCode": "try {\nconst aiOutput = $input.first().json;\nconst emailData = $('Validate Email').first().json;\n\n// === LOAD CONFIG ===\nconst configRows = $('Load Config').all();\nconst config = {};\nfor (const row of configRows) {\n  config[row.json.klucz] = row.json.wartosc;\n}\n\nconst teamRows = $('Load Zespol').all();\nconst teamMap = {};\nfor (const row of teamRows) {\n  const r = row.json;\n  teamMap[r.kategoria] = {\n    person: r.osoba, role: r.rola, channel: r.slack_channel,\n    slackUserId: r.slack_user_id, gmailLabelId: r.gmail_label_id, emoji: r.emoji\n  };\n}\n\nconst catRows = $('Load Kategorie').all();\nconst validCategories = [];\nconst categoryLabels = {};\nfor (const row of catRows) {\n  const r = row.json;\n  validCategories.push(r.klucz);\n  categoryLabels[r.klucz] = `${r.emoji} ${r.nazwa_pl}`;\n}\n\n// === PARSE AI RESPONSE ===\nlet aiResult;\nlet parseError = false;\nlet errorReason = '';\n\ntry {\n  if (aiOutput.output && typeof aiOutput.output === 'object') {\n    aiResult = aiOutput.output;\n  } else if (aiOutput.output && typeof aiOutput.output === 'string') {\n    aiResult = JSON.parse(aiOutput.output.replace(/```json\\n?/g, '').replace(/```\\n?/g, '').trim());\n  } else if (aiOutput.text && typeof aiOutput.text === 'string') {\n    aiResult = JSON.parse(aiOutput.text.replace(/```json\\n?/g, '').replace(/```\\n?/g, '').trim());\n  } else if (aiOutput.category) {\n    aiResult = aiOutput;\n  } else {\n    throw new Error('Unexpected AI output format');\n  }\n\n  const defaultCat = config.default_category || 'pytanie_klienta';\n  if (!validCategories.includes(aiResult.category)) {\n    errorReason = `Nieznana kategoria: ${aiResult.category}`;\n    aiResult.category = defaultCat;\n    aiResult.summary = (aiResult.summary || '') + ' [AUTO-FALLBACK]';\n    parseError = true;\n  }\n  if (!['pilne', 'normalne'].includes(aiResult.urgency)) {\n    aiResult.urgency = 'normalne';\n  }\n} catch (e) {\n  parseError = true;\n  errorReason = e.message;\n\n  // === KEYWORD FALLBACK ===\n  const fullText = ((emailData.subject || '') + ' ' + (emailData.body || '')).toLowerCase();\n  const urgentKw = ['pilne','pilna','asap','natychmiast','krytyczne','deadline','awaria','nie działa','windykacja','do jutra','w ciągu 24','natychmiastow'];\n  const isUrgentFB = urgentKw.some(kw => fullText.includes(kw));\n\n  let fbCat = 'pytanie_klienta';\n  if (fullText.includes('faktur') || fullText.includes('płatnoś') || fullText.includes('korekta')) fbCat = 'sprawy_fakturowe';\n  else if (fullText.includes('reklamac') || fullText.includes('rozczarowan')) fbCat = 'reklamacja_eskalacja';\n  else if (fullText.includes('ofert') || fullText.includes('wycen') || fullText.includes('cennik')) fbCat = 'zapytanie_ofertowe';\n  else if (fullText.includes('cv') || fullText.includes('aplikac') || fullText.includes('stanowisko')) fbCat = 'rekrutacja_cv';\n  else if (fullText.includes('unsubscribe') || fullText.includes('kliknij tutaj')) fbCat = 'spam';\n  else if (fullText.includes('out of office') || fullText.includes('no-reply') || fullText.includes('noreply')) fbCat = 'wiadomosc_systemowa';\n  else if (fullText.includes('umow') || fullText.includes('nda') || fullText.includes('prawny') || fullText.includes('kancelari')) fbCat = 'sprawy_prawne_umowy';\n  else if (fullText.includes('konsorcj') || fullText.includes('partnerst') || fullText.includes('współprac')) fbCat = 'wspolpraca_partnerstwo';\n  else if (fullText.includes('konferencj') || fullText.includes('zaproszeni') || fullText.includes('webinar')) fbCat = 'zaproszenie_wydarzenie';\n\n  aiResult = {\n    category: fbCat, urgency: isUrgentFB ? 'pilne' : 'normalne',\n    summary: `[FALLBACK - AI error: ${errorReason}] Kategoria na podstawie słów kluczowych.`,\n    key_entities: [], urgency_reason: isUrgentFB ? 'Wykryto słowa kluczowe pilności' : ''\n  };\n}\n\n// === ROUTING ===\nconst defaultCategory = config.default_category || 'pytanie_klienta';\nconst routing = teamMap[aiResult.category] || teamMap[defaultCategory] || {\n  person: config.crisis_manager_name, role: config.crisis_manager_role,\n  channel: config.normal_channel, slackUserId: config.crisis_slack_id,\n  gmailLabelId: '', emoji: '❓'\n};\n\nconst isUrgent = aiResult.urgency === 'pilne';\nconst crisisManager = isUrgent ? {\n  person: config.crisis_manager_name,\n  role: config.crisis_manager_role,\n  slackUserId: config.crisis_slack_id\n} : null;\n\nreturn [{\n  json: {\n    messageId: emailData.messageId, threadId: emailData.threadId,\n    subject: emailData.subject, body: emailData.body,\n    from: emailData.from, fromName: emailData.fromName, date: emailData.date,\n    category: aiResult.category,\n    categoryLabel: categoryLabels[aiResult.category] || `❓ ${aiResult.category}`,\n    urgency: aiResult.urgency, isUrgent,\n    summary: aiResult.summary || 'Brak podsumowania',\n    keyEntities: aiResult.key_entities || [],\n    urgencyReason: aiResult.urgency_reason || '',\n    assignedPerson: routing.person, assignedRole: routing.role,\n    assignedChannel: routing.channel, assignedSlackUserId: routing.slackUserId,\n    gmailLabelId: routing.gmailLabelId, emoji: routing.emoji,\n    crisisManager,\n    _parseError: parseError, _errorReason: errorReason,\n    _config: config, _categoryLabels: categoryLabels\n  }\n}];\n} catch (error) {\n  const enriched = new Error(`[Validate & Route] ${error.message}`);\n  enriched.description = `Node: Validate & Route\\nOriginal: ${error.message}`;\n  throw enriched;\n}"
+      },
+      "id": "00000000-0000-0000-0000-000000000124",
+      "name": "Validate and Route",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1280,
+        512
+      ],
+      "notes": "Merged: Validate AI Response + Parse AI & Route + Check AI Errors. Single node handles AI parsing, fallback, routing, and error flags."
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Gmail Trigger": {
+      "main": [
+        [
+          {
+            "node": "Load Zespol",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Zespol": {
+      "main": [
+        [
+          {
+            "node": "Load Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Config": {
+      "main": [
+        [
+          {
+            "node": "Load Kategorie",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Kategorie": {
+      "main": [
+        [
+          {
+            "node": "Validate Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail - Create Draft": {
+      "main": [
+        [
+          {
+            "node": "Format Notification",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Prepare Approval Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Notification": {
+      "main": [
+        [
+          {
+            "node": "Is Urgent?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Urgent?": {
+      "main": [
+        [
+          {
+            "node": "Slack - URGENT Channel",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Gmail - Label PILNE",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Slack - Normal Channel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack - URGENT Channel": {
+      "main": [
+        [
+          {
+            "node": "Prepare Slack DM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack - Normal Channel": {
+      "main": [
+        [
+          {
+            "node": "Prepare Slack DM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Slack DM": {
+      "main": [
+        [
+          {
+            "node": "Slack - Worker DM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack - Worker DM": {
+      "main": [
+        [
+          {
+            "node": "Gmail - Mark as Read",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Approval Email": {
+      "main": [
+        [
+          {
+            "node": "Gmail - Send Approval",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail - Send Approval": {
+      "main": [
+        [
+          {
+            "node": "Wait - Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait - Decision": {
+      "main": [
+        [
+          {
+            "node": "Parse Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Decision": {
+      "main": [
+        [
+          {
+            "node": "Is Timeout?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Timeout?": {
+      "main": [
+        [
+          {
+            "node": "Slack - Timeout Alert",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Switch - Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch - Decision": {
+      "main": [
+        [
+          {
+            "node": "Gmail - Send to Client",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Slack - Revision Needed",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Slack - Rejected",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail - Send to Client": {
+      "main": [
+        [
+          {
+            "node": "Slack - Approved",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "GSheets - Log Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack - Revision Needed": {
+      "main": [
+        [
+          {
+            "node": "GSheets - Log Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack - Rejected": {
+      "main": [
+        [
+          {
+            "node": "GSheets - Log Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Email": {
+      "main": [
+        [
+          {
+            "node": "AI Categorize Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Categorize Email": {
+      "main": [
+        [
+          {
+            "node": "Validate and Route",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "AI Categorize Email",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Categorize Email",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail - Add Label": {
+      "main": [
+        [
+          {
+            "node": "AI Generate Draft",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Generate Draft": {
+      "main": [
+        [
+          {
+            "node": "Gmail - Create Draft",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model Draft": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Generate Draft",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate and Route": {
+      "main": [
+        [
+          {
+            "node": "Gmail - Add Label",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "WORKFLOW_ID_ERROR_HANDLER",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "versionId": "00000000-0000-0000-0000-000000000122",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "REPLACE_AFTER_IMPORT"
+  },
+  "id": "WORKFLOW_ID_MAIN",
+  "tags": []
+}

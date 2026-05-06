@@ -1,0 +1,871 @@
+{
+  "name": "Email Triage - Extended v1.1 (Trello + Drive + Approval)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "email-triage-extended",
+        "options": {
+          "rawBody": false
+        }
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook - From Main Flow",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -400,
+        400
+      ],
+      "webhookId": "00000000-0000-0000-0000-000000000005"
+    },
+    {
+      "parameters": {
+        "jsCode": "try {\nconst item = $input.first().json;\nconst body = item.body || '';\nconst taskPrompt = `Na podstawie poniższej wiadomości email do firmy doradczej:\n\n1. Przygotuj zwięzłe streszczenie (maks. 300 znaków)\n2. Utwórz priorytetową listę zadań do wykonania (max 5 zadań)\n3. Określ deadline — ile dni roboczych na realizację (1-10)\n\nOdpowiedz WYŁĄCZNIE poprawnym JSON:\n{\"streszczenie\": \"...\", \"zadania\": [\"Zadanie 1\", \"Zadanie 2\"], \"deadline_dni\": 3}\n\nKategoria: ${item.category}\nNadawca: ${item.fromName} (${item.from})\nTemat: ${item.subject}\nTreść: ${body.substring(0, 2000)}\nPodsumowanie AI: ${item.summary}`;\nreturn [{ json: { ...item, taskPrompt } }];\n} catch (error) {\n  return [{ json: { ...($input.first()?.json || {}), _error: true, _errorMessage: error.message } }];\n}"
+      },
+      "id": "prep-task-prompt",
+      "name": "Prepare Task Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -128,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.openai.com/v1/chat/completions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"gpt-4o-mini\",\n  \"temperature\": 0.2,\n  \"max_tokens\": 400,\n  \"messages\": [\n    {\"role\": \"system\", \"content\": \"Jesteś asystentem firmy doradczej. Generujesz konkretne zadania na podstawie maili. Odpowiadasz WYŁĄCZNIE poprawnym JSON.\"},\n    {\"role\": \"user\", \"content\": {{ JSON.stringify($json.taskPrompt) }} }\n  ]\n}",
+        "options": {}
+      },
+      "id": "ai-tasks",
+      "name": "AI Generate Tasks",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        160,
+        400
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "credentials": {
+        "openAiApi": {
+          "id": "CRED_ID_REPLACE_AFTER_IMPORT_2",
+          "name": "OpenAI - REPLACE_AFTER_IMPORT"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "try {\nconst aiResponse = $input.first().json;\nconst prev = $('Prepare Task Prompt').first().json;\nlet streszczenie = prev.summary || 'Brak streszczenia';\nlet zadania = ['Przejrzyj mail i odpowiedz'];\nlet deadlineDni = 3;\ntry {\n  const raw = aiResponse.choices?.[0]?.message?.content || '';\n  const cleaned = raw.replace(/```json\\n?/g, '').replace(/```\\n?/g, '').trim();\n  const parsed = JSON.parse(cleaned);\n  if (parsed.streszczenie) streszczenie = parsed.streszczenie;\n  if (Array.isArray(parsed.zadania) && parsed.zadania.length > 0) zadania = parsed.zadania.slice(0, 7);\n  if (typeof parsed.deadline_dni === 'number') deadlineDni = Math.min(10, Math.max(1, parsed.deadline_dni));\n} catch(e) { /* fallback defaults */ }\nconst dueDate = new Date();\nlet daysAdded = 0;\nwhile (daysAdded < deadlineDni) {\n  dueDate.setDate(dueDate.getDate() + 1);\n  const day = dueDate.getDay();\n  if (day !== 0 && day !== 6) daysAdded++;\n}\nconst trelloLabels = { zapytanie_ofertowe: 'green', pytanie_klienta: 'blue', reklamacja_eskalacja: 'red', sprawy_fakturowe: 'yellow', wspolpraca_partnerstwo: 'purple', rekrutacja_cv: 'sky', zaproszenie_wydarzenie: 'lime', sprawy_prawne_umowy: 'orange', wiadomosc_systemowa: 'black', spam: 'black' };\nconst cardDesc = `**Od:** ${prev.fromName} <${prev.from}>\\n**Kategoria:** ${prev.categoryLabel || prev.category}\\n**Pilność:** ${prev.urgency}\\n**Przypisano:** ${prev.assignedPerson} (${prev.assignedRole})\\n\\n**Streszczenie:**\\n${streszczenie}\\n\\n**Draft odpowiedzi:**\\n${(prev.draftText || '').substring(0, 500)}`;\nreturn [{ json: { ...prev, streszczenie, zadania, deadlineDate: dueDate.toISOString(), deadlineDni, trelloLabelColor: trelloLabels[prev.category] || 'black', trelloCardName: prev.subject, trelloCardDesc: cardDesc } }];\n} catch (error) {\n  return [{ json: { ...($input.first()?.json || {}), _error: true, _errorMessage: error.message } }];\n}"
+      },
+      "id": "parse-tasks",
+      "name": "Parse Tasks",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        448,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "listId": "YOUR_TRELLO_LIST_ID",
+        "name": "={{ $json.trelloCardName }}",
+        "additionalFields": {
+          "due": "={{ $json.deadlineDate }}"
+        }
+      },
+      "id": "trello-create-card",
+      "name": "Trello - Create Card",
+      "type": "n8n-nodes-base.trello",
+      "typeVersion": 1,
+      "position": [
+        720,
+        400
+      ],
+      "credentials": {
+        "trelloApi": {
+          "id": "CRED_ID_REPLACE_AFTER_IMPORT_6",
+          "name": "Trello - REPLACE_AFTER_IMPORT"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.trello.com/1/cards/{{ $json.id }}/checklists",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "trelloApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "name",
+              "value": "Zadania do wykonania"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "trello-checklist",
+      "name": "Trello - Create Checklist",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1008,
+        400
+      ],
+      "credentials": {
+        "trelloApi": {
+          "id": "CRED_ID_REPLACE_AFTER_IMPORT_6",
+          "name": "Trello - REPLACE_AFTER_IMPORT"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "try {\nconst checklistId = $input.first().json.id;\nconst prevData = $('Parse Tasks').first().json;\nconst zadania = prevData.zadania || ['Przejrzyj mail'];\nconst cardUrl = $('Trello - Create Card').first().json?.url || '';\nreturn zadania.map((z, i) => ({\n  json: { checklistId, taskName: z, taskIndex: i, cardUrl, ...prevData }\n}));\n} catch (error) {\n  return [{ json: { ...($input.first()?.json || {}), _error: true, _errorMessage: error.message } }];\n}"
+      },
+      "id": "split-tasks",
+      "name": "Split Tasks",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1280,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.trello.com/1/checklists/{{ $json.checklistId }}/checkItems",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "trelloApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "name",
+              "value": "={{ $json.taskName }}"
+            },
+            {
+              "name": "checked",
+              "value": "false"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "trello-add-items",
+      "name": "Trello - Add Checklist Items",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1520,
+        400
+      ],
+      "credentials": {
+        "trelloApi": {
+          "id": "CRED_ID_REPLACE_AFTER_IMPORT_6",
+          "name": "Trello - REPLACE_AFTER_IMPORT"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "your-channel-name"
+        },
+        "text": "=📋 Karta Trello: *{{ $('Parse Tasks').first().json.trelloCardName }}*\nPrzypisano: {{ $('Parse Tasks').first().json.assignedPerson }}\nDeadline: {{ $('Parse Tasks').first().json.deadlineDni }} dni roboczych\n📎 Załączniki: {{ $('Gmail: Pobierz załączniki').all().length || 0 }}\n🔗 {{ $('Trello - Create Card').first().json.url || 'brak URL' }}",
+        "otherOptions": {
+          "mrkdwn": true
+        }
+      },
+      "id": "slack-task-notify",
+      "name": "Slack - Task Created",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.2,
+      "position": [
+        2608,
+        1136
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "webhookId": "00000000-0000-0000-0000-000000000016",
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "CRED_ID_REPLACE_AFTER_IMPORT_3",
+          "name": "Slack OAuth - REPLACE_AFTER_IMPORT"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "content": "## TRELLO + DRIVE + ATTACHMENTS\n\nRozszerzenie głównego Email Triage.\nWebhook otrzymuje dane z main flow.\n\n### Sekcja 1: Trello Tasks (górna ścieżka)\nAI generuje zadania → Trello card + checklist\n\n### Sekcja 2: Drive + Załączniki (dolna ścieżka)\nSprawdź/utwórz folder klienta → Zapisz folder ID\n→ Sprawdź załączniki → Pobierz z Gmail → Upload na Drive\n→ Log do GSheets Historia → Slack notify\n\n### KONFIGURACJA:\n- TRELLO_LIST_ID — ID listy Trello\n- Trello API credentials\n- Google Drive credentials\n- Arkusz 'Klienci' w GSheets (email, firma, folder_id, data_dodania)",
+        "height": 520,
+        "width": 440
+      },
+      "id": "sticky-trello",
+      "name": "Sticky Note - Config",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -384,
+        -736
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\nconst folderName = item.clientCompany || item.fromName || (item.from || '').split('@')[0] || 'unknown';\nconst safeName = folderName.replace(/[\\\\/:*?\"<>|]/g, '_').substring(0, 100);\nreturn [{\n  json: {\n    ...item,\n    driveFolderName: safeName,\n    hasExistingFolder: !!(item.clientDriveFolder && item.clientDriveFolder.length > 5),\n    hasAttachments: !!(item.hasAttachments || item.attachments)\n  }\n}];"
+      },
+      "id": "node-31-prep-drive",
+      "name": "Przygotuj dane Drive",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        720
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.hasExistingFolder }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "node-32-folder-exists",
+      "name": "Czy folder istnieje?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        944,
+        880
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "set-existing-folder",
+              "name": "targetFolderId",
+              "value": "={{ $json.clientDriveFolder }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-32a-use-existing",
+      "name": "Użyj istniejącego folderu",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1200,
+        768
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "create"
+      },
+      "id": "node-33-gdrive-create",
+      "name": "GDrive: Utwórz folder",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        1200,
+        1024
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "CRED_ID_REPLACE_AFTER_IMPORT_7",
+          "name": "Google Drive OAuth - REPLACE_AFTER_IMPORT"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "list",
+          "cachedResultName": "Baza_danych"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Klienci",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "email": "={{ $('Przygotuj dane Drive').first().json.from }}",
+            "firma": "={{ $('Przygotuj dane Drive').first().json.driveFolderName }}",
+            "folder_id": "={{ $json.id }}",
+            "data_dodania": "={{ new Date().toISOString() }}"
+          }
+        },
+        "options": {
+          "cellFormat": "USER_ENTERED"
+        }
+      },
+      "id": "node-34-gsheets-folder",
+      "name": "GSheets: Zapisz folder ID",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1456,
+        1024
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "CRED_ID_REPLACE_AFTER_IMPORT_5",
+          "name": "Google Sheets OAuth - REPLACE_AFTER_IMPORT"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "set-new-folder",
+              "name": "targetFolderId",
+              "value": "={{ $('GDrive: Utwórz folder').first().json.id }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-34b-set-new-id",
+      "name": "Ustaw nowy folder ID",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1712,
+        1024
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $('Przygotuj dane Drive').first().json.hasAttachments }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "node-36-has-attachments",
+      "name": "Czy są załączniki?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1904,
+        848
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "messageId": "={{ $('Przygotuj dane Drive').first().json.messageId || $('Przygotuj dane Drive').first().json.id }}"
+      },
+      "id": "node-37-gmail-attachments",
+      "name": "Gmail: Pobierz załączniki",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        2272,
+        832
+      ],
+      "webhookId": "00000000-0000-0000-0000-000000000015",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "CRED_ID_REPLACE_AFTER_IMPORT_8",
+          "name": "Gmail OAuth - REPLACE_AFTER_IMPORT"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "list",
+          "cachedResultName": "Baza_danych"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Historia",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "data": "={{ new Date().toISOString() }}",
+            "email": "={{ $('Przygotuj dane Drive').first().json.from }}",
+            "firma": "={{ $('Przygotuj dane Drive').first().json.driveFolderName }}",
+            "kategoria": "={{ $('Przygotuj dane Drive').first().json.category }}",
+            "temat": "={{ $('Przygotuj dane Drive').first().json.subject }}",
+            "podsumowanie": "={{ $('Przygotuj dane Drive').first().json.streszczenie || $('Przygotuj dane Drive').first().json.summary }}",
+            "przypisano": "={{ $('Przygotuj dane Drive').first().json.assignedPerson }}",
+            "pilne": "={{ $('Przygotuj dane Drive').first().json.isUrgent }}",
+            "trello_url": "={{ $('Trello - Create Card').first().json.url || '' }}",
+            "attachments_count": "={{ $('Gmail: Pobierz załączniki').all().length || 0 }}"
+          }
+        },
+        "options": {
+          "cellFormat": "USER_ENTERED"
+        }
+      },
+      "id": "node-39-gsheets-log",
+      "name": "GSheets: Log do historii",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        2400,
+        1136
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "CRED_ID_REPLACE_AFTER_IMPORT_5",
+          "name": "Google Sheets OAuth - REPLACE_AFTER_IMPORT"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "name": "={{ $json.fileName || 'attachment_' + $runIndex }}",
+        "driveId": {
+          "__rl": true,
+          "value": "myDrive",
+          "mode": "list"
+        },
+        "folderId": {
+          "__rl": true,
+          "value": "={{ $('Użyj istniejącego folderu').first().json.targetFolderId || $('Ustaw nowy folder ID').first().json.targetFolderId || 'root' }}",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "id": "node-38-gdrive-upload",
+      "name": "GDrive: Upload załączników",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        2544,
+        832
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "CRED_ID_REPLACE_AFTER_IMPORT_1",
+          "name": "Google Drive OAuth - REPLACE_AFTER_IMPORT"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "C0APTEFEMGA",
+          "mode": "list",
+          "cachedResultName": "your-slack-channel-name"
+        },
+        "text": "=✅ Karta Trello utworzona\n\nKategoria: {{ $json._source.category || \"—\" }}\nTemat: {{ $json._source.subject || \"—\" }}\n\nDM z detalami trafił do przypisanej osoby.",
+        "otherOptions": {
+          "mrkdwn": true,
+          "unfurl_links": false
+        }
+      },
+      "id": "00000000-0000-0000-0000-000000000102",
+      "name": "Slack: Kanał — Zadanie utworzone",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.2,
+      "position": [
+        2288,
+        592
+      ],
+      "webhookId": "00000000-0000-0000-0000-000000000018",
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "CRED_ID_REPLACE_AFTER_IMPORT_3",
+          "name": "Slack OAuth - REPLACE_AFTER_IMPORT"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "select": "user",
+        "user": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $json.slack_user }}"
+        },
+        "text": "={{ $json.slack_task_message }}",
+        "otherOptions": {
+          "mrkdwn": true
+        }
+      },
+      "id": "00000000-0000-0000-0000-000000000103",
+      "name": "Slack: DM — Nowe zadanie",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.2,
+      "position": [
+        2288,
+        400
+      ],
+      "webhookId": "00000000-0000-0000-0000-000000000010",
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "CRED_ID_REPLACE_AFTER_IMPORT_3",
+          "name": "Slack OAuth - REPLACE_AFTER_IMPORT"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// =============================================\n// SLACK: Powiadomienie o nowym zadaniu\n// =============================================\n// Wejście: $input z \"Agreguj po checkliście\" → { json: { data: [...], count: N } }\n// Output: { slack_task_message, slack_user, slack_channel } dla downstream Slack nodes\n\nconst input = $input.first().json;\n// \"Agreguj po checkliście\" zwraca { data: [...], count: N } — bierzemy pierwszy item z data\nconst data = input.data?.[0] || input;\n\nconst cardUrl = data.cardUrl || '(brak linku)';\nconst pilneTag = data.isUrgent ? '🔴 *PILNE* — ' : '';\nconst categoryLabel = data.categoryLabel || data.category || 'brak kategorii';\nconst deadlineDate = data.deadlineDate\n  ? new Date(data.deadlineDate).toLocaleDateString('pl-PL')\n  : '(brak terminu)';\nconst deadlineDni = data.deadlineDni ?? '?';\nconst streszczenie = data.streszczenie || data.summary || '(brak streszczenia)';\n\nconst msg = `${pilneTag}📋 *Nowe zadanie przypisane do Ciebie*\n\n*Od klienta:* ${data.fromName || '(brak)'} (${data.from || '(brak email)'})\n*Temat:* ${data.subject || '(brak tematu)'}\n*Kategoria:* ${categoryLabel}\n*Deadline:* ${deadlineDni} dni roboczych (${deadlineDate})\n\n*Streszczenie:*\n${streszczenie}\n\n🔗 *Karta Trello:* ${cardUrl}\n\n_Sprawdź kartę w Trello — znajdziesz tam checklistę zadań i draft odpowiedzi do review._`;\n\nreturn [{\n  json: {\n    slack_task_message: msg,\n    slack_user: data.assignedSlackUserId || '',\n    slack_channel: data.assignedChannel || 'general',\n    // Pass through original data for downstream debugging\n    _source: { from: data.from, subject: data.subject, category: data.category }\n  }\n}];"
+      },
+      "id": "00000000-0000-0000-0000-000000000101",
+      "name": "Buduj powiadomienie o zadaniu",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2032,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Aggregate: zbierz wszystkie itemy w jeden\nconst items = $input.all();\nconst allData = items.map(i => i.json);\nreturn [{ json: { data: allData, count: allData.length } }];"
+      },
+      "id": "00000000-0000-0000-0000-000000000100",
+      "name": "Agreguj po checkliście",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1776,
+        400
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook - From Main Flow": {
+      "main": [
+        [
+          {
+            "node": "Prepare Task Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Task Prompt": {
+      "main": [
+        [
+          {
+            "node": "AI Generate Tasks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Generate Tasks": {
+      "main": [
+        [
+          {
+            "node": "Parse Tasks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Tasks": {
+      "main": [
+        [
+          {
+            "node": "Trello - Create Card",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Przygotuj dane Drive",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trello - Create Card": {
+      "main": [
+        [
+          {
+            "node": "Trello - Create Checklist",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trello - Create Checklist": {
+      "main": [
+        [
+          {
+            "node": "Split Tasks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Tasks": {
+      "main": [
+        [
+          {
+            "node": "Trello - Add Checklist Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trello - Add Checklist Items": {
+      "main": [
+        [
+          {
+            "node": "Agreguj po checkliście",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Przygotuj dane Drive": {
+      "main": [
+        [
+          {
+            "node": "Czy folder istnieje?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Czy folder istnieje?": {
+      "main": [
+        [
+          {
+            "node": "Użyj istniejącego folderu",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "GDrive: Utwórz folder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Użyj istniejącego folderu": {
+      "main": [
+        [
+          {
+            "node": "Czy są załączniki?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GDrive: Utwórz folder": {
+      "main": [
+        [
+          {
+            "node": "GSheets: Zapisz folder ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GSheets: Zapisz folder ID": {
+      "main": [
+        [
+          {
+            "node": "Ustaw nowy folder ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ustaw nowy folder ID": {
+      "main": [
+        [
+          {
+            "node": "Czy są załączniki?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Czy są załączniki?": {
+      "main": [
+        [
+          {
+            "node": "Gmail: Pobierz załączniki",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "GSheets: Log do historii",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail: Pobierz załączniki": {
+      "main": [
+        [
+          {
+            "node": "GDrive: Upload załączników",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GSheets: Log do historii": {
+      "main": [
+        [
+          {
+            "node": "Slack - Task Created",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GDrive: Upload załączników": {
+      "main": [
+        [
+          {
+            "node": "GSheets: Log do historii",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buduj powiadomienie o zadaniu": {
+      "main": [
+        [
+          {
+            "node": "Slack: DM — Nowe zadanie",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack: Kanał — Zadanie utworzone",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agreguj po checkliście": {
+      "main": [
+        [
+          {
+            "node": "Buduj powiadomienie o zadaniu",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Europe/Warsaw",
+    "saveManualExecutions": true,
+    "errorWorkflow": "WORKFLOW_ID_ERROR_HANDLER",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "versionId": "00000000-0000-0000-0000-000000000104",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "REPLACE_AFTER_IMPORT"
+  },
+  "id": "WORKFLOW_ID_EXTENDED",
+  "tags": []
+}
