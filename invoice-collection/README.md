@@ -33,21 +33,19 @@ Goal: take this end-to-end, from inbox to archived file, with zero manual touch 
 
 ## Solution
 
-n8n workflow that polls Gmail every minute, routes attachments by MIME type, extracts invoice data via OpenAI, validates and deduplicates against a Google Sheets registry, then archives files in monthly Drive folders.
+n8n workflow that polls Gmail every 30 minutes, routes attachments by MIME type, extracts invoice data via OpenAI, validates and deduplicates against a Google Sheets registry, then archives files in monthly Drive folders.
 
 ### Architecture
 
-
-<img width="905" height="731" alt="image" src="https://github.com/user-attachments/assets/4edb3f04-0a56-4b5a-92e1-bc5c64aa8583" />
+![invoice_architecture Screenshot](screenshots/invoice_architecture.png)
 
 
 ---
+![workflow_1 Screenshot](screenshots/workflow_1.png)
 
-<img width="1558" height="390" alt="image" src="https://github.com/user-attachments/assets/4c57483c-4891-4db4-ae3b-36dbde2a41e2" />
+![workflow_2 Screenshot](screenshots/workflow_2.png)
 
-<img width="1774" height="556" alt="image" src="https://github.com/user-attachments/assets/060af290-458b-4737-905a-62631c5b6f8b" />
-
-<img width="1752" height="525" alt="image" src="https://github.com/user-attachments/assets/8518661f-2aca-46bf-ab33-22d54873a253" />
+![workflow_3 Screenshot](screenshots/workflow_3.png)
 
 
 ### Key technical decisions
@@ -97,7 +95,7 @@ Built into the roadmap, not gaps in awareness:
 | Layer | Technology |
 | --- | --- |
 | Orchestration | n8n |
-| Email trigger | Gmail OAuth (poll every minute) |
+| Email trigger | Gmail OAuth (poll every 30 minutes) |
 | Routing | n8n Switch nodes (MIME type), IF nodes (validation/dedup) |
 | AI extraction | OpenAI (Information Extractor, vision for images) |
 | Storage | Google Drive (file archive), Google Sheets (registry + logs) |
