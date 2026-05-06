@@ -37,33 +37,11 @@ n8n workflow that polls Gmail every minute, routes attachments by MIME type, ext
 
 ### Architecture
 
-```
-Gmail Trigger (every minute, unread only)
-   │
-   ├─ has attachment? ──── NO ──> Auto-reply + log + mark as read
-   │
-   ▼ YES
-Pre-processing filter → Split attachments → Batch loop
-   │
-Upload to Drive (retry 3x) → Custom JS validation
-   │
-File Type Switch (mimeType): PDF / image / DOCX
-   │
-   ├─ PDF  → Extract PDF text
-   ├─ IMG  → OpenAI vision analysis
-   └─ DOCX → Extract DOCX text
-   │
-   ▼
-OpenAI Information Extractor (retry 2x)
-   │
-Validation (Code node) ──── invalid ──> INVALID folder + ErrorLog + admin alert
-   │
-   ▼ valid
-Duplicate check (Sheets lookup) ──── duplicate ──> DUPLICATES folder + alert
-   │
-   ▼ new
-Find/create monthly folder → Move file → Save to registry → Mark as read
-```
+
+<img width="905" height="731" alt="image" src="https://github.com/user-attachments/assets/4edb3f04-0a56-4b5a-92e1-bc5c64aa8583" />
+
+
+---
 
 <img width="1558" height="390" alt="image" src="https://github.com/user-attachments/assets/4c57483c-4891-4db4-ae3b-36dbde2a41e2" />
 
