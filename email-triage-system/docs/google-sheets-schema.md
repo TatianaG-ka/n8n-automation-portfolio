@@ -14,7 +14,7 @@ The four tabs are read by the workflow on every email — so any change in Sheet
 - Change tone of voice by editing `ton_odpowiedzi` in `Kategorie`
 - Adjust system limits in `Konfiguracja`
 
-For the architectural rationale: see [ADR-002](design-decisions.md#adr-002).
+For the architectural rationale: see [ADR-002](https://github.com/TatianaG-ka/n8n-automation-portfolio/blob/main/email-triage-system/docs/design_decisions_ADR.md#adr-002).
 
 ---
 
@@ -156,6 +156,6 @@ If any of the 24 end-to-end tests fail with `Cannot find Sheet` or `Unknown cate
 ## Related documentation
 
 - [Setup guide](SETUP.md) — Phase 1 walks through creating the Sheet from scratch
-- [ADR-002](design-decisions.md#adr-002) — Architectural rationale for config-as-data
+- [ADR-002](design_decisions_ADR.md#adr-002) — Architectural rationale for config-as-data
 - [`prompts/categorize-v1-production.md`](prompts/categorize-v1-production.md) — How `Kategorie.opis_dla_ai` is injected into the AI prompt
 - [`prompts/generate-draft-v1-production.md`](prompts/generate-draft-v1-production.md) — How `Kategorie.ton_odpowiedzi` flows into draft generation
