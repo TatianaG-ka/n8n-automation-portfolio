@@ -119,9 +119,9 @@ Manual tests (error/approval):    9 to be executed manually
 
 To re-run the test suite against your own deployment:
 
-1. Complete setup per [`SETUP.md`](../SETUP.md)
-2. Use test data from [`../../test_emails.json`](../../test_emails.json)
+1. Complete setup per [`SETUP.md`](../docs/SETUP.md)
+2. Use test data from [`../../test_emails.json`](../testy/test_emails.json)
 3. Trigger via n8n MCP `n8n_test_workflow` or Webhook trigger (temporary node)
 4. Verify results match the table above (same 24 categories, similar execution times)
 
-Significant deviations from this baseline (>2 failures, >50s average execution) indicate configuration issues — see [`SETUP.md` Troubleshooting](../SETUP.md#troubleshooting) for diagnostic steps.
+Significant deviations from this baseline (>2 failures, >50s average execution) indicate configuration issues — see [`SETUP.md` Troubleshooting](../docs/SETUP.md#troubleshooting) for diagnostic steps.
