@@ -10,24 +10,24 @@ ADRs are immutable historical records. If a decision is later reversed, a new AD
 
 | # | Title | Status |
 |---|---|---|
-| [ADR-001](#adr-001) | Use Structured Output Parser with 3-layer fallback for AI classification | Accepted |
+| [ADR-001](#adr-001) | Use Structured Output Parser with 4-layer fallback for AI classification | Accepted  |
 | [ADR-002](#adr-002) | Store all configuration as data in Google Sheets, not in workflow code | Accepted |
-| [ADR-003](#adr-003) | Idempotency via `$getWorkflowStaticData` cache of last 500 messageIds | Accepted (with v7 follow-up) |
+| [ADR-003](#adr-003) | Idempotency via `$getWorkflowStaticData` cache of last 500 messageIds | Accepted  |
 | [ADR-004](#adr-004) | Two-stage send: draft default, send-on-approval opt-in | Accepted |
 | [ADR-005](#adr-005) | Mark email as read at end of flow, not at start | Accepted |
 | [ADR-006](#adr-006) | Dedicated error workflow with dual-channel alerting (Slack + Gmail) | Accepted |
 | [ADR-007](#adr-007) | Differentiated retry strategy per service | Accepted |
-| [ADR-008](#adr-008) | Approval flow integrated in main workflow, not separate workflow | Accepted (supersedes prior split) |
-| [ADR-009](#adr-009) | Serial Sheets load instead of parallel | Accepted (n8n bug workaround) |
-| [ADR-010](#adr-010) | Single `Validate and Route` Code node instead of two separate nodes | Accepted (refactor from v5) |
+| [ADR-008](#adr-008) | Approval flow integrated in main workflow, not separate workflow | Accepted |
+| [ADR-009](#adr-009) | Serial Sheets load instead of parallel | Accepted  |
+| [ADR-010](#adr-010) | Single `Validate and Route` Code node instead of two separate nodes | Accepted |
 
 ---
 
 ## ADR-001
-### Use Structured Output Parser with 3-layer fallback for AI classification
+### Use Structured Output Parser with 4-layer fallback for AI classification
 
-**Status:** Accepted
-**Date:** 2026-03 (v6 design)
+**Status:** Accepted   
+**Date:** 2026-03 (v6 design), revised 2026-04 (v6.1 — semantic graceful degradation added as separate layer)
 
 #### Context
 
@@ -38,43 +38,63 @@ The workflow needs to classify each incoming email into one of 10 predefined cat
 
 LLMs are notoriously unpredictable: they sometimes ignore explicit instructions to "return only JSON" and add markdown backticks, conversational text, or invent new categories. A naive `JSON.parse()` on raw output will fail unpredictably.
 
+Critically, **AI failures are not all the same kind**. The output can be:
+- **Structurally malformed** — invalid JSON, markdown fences, conversational prose
+- **Semantically wrong** — valid JSON, but with a category outside the allowed enum (LLM hallucinates a category that wasn't in the prompt)
+
+These two failure modes need different recovery strategies.
+
 #### Decision
 
-Use **three layers of resilience** for AI output parsing:
+Use **four layers of resilience** for AI output parsing, each handling a distinct type of failure:
 
 ```
-Layer 1 (LLM-level): LangChain Structured Output Parser
+Layer 1 (LLM-level, structural success): LangChain Structured Output Parser
   → Enforces JSON schema with explicit field types at LLM call boundary
   → Output: structured object with category/urgency/summary/key_entities/urgency_reason
+  → Catches: most malformed outputs at the source
 
-Layer 2 (Code-level): JS parser handles 3 output formats
-  → Object (when Structured Parser worked)
-  → String with markdown fences (`​`​`​json...`​`​`​)
-  → Raw text (last resort)
+Layer 2 (Code-level, structural recovery): JS parser handles 4 output formats
+  → aiOutput.output as object (Structured Parser worked perfectly)
+  → aiOutput.output as string (parser returned string with markdown fences)
+  → aiOutput.text as string (alternate output property when parser is bypassed)
+  → aiOutput.category exists directly (raw response without wrapper)
+  → Strips ```json...``` markdown fences, calls JSON.parse with cleanup
 
-Layer 3 (Code-level): Keyword fallback classifier
+Layer 3 (Code-level, semantic graceful degradation): Category enum validation
+  → Check `validCategories.includes(aiResult.category)` after parsing
+  → If category is parsed but invented (LLM hallucinated): replace with config.default_category
+  → Append " [AUTO-FALLBACK]" to summary (visible to operator)
+  → Set _parseError = true → flag in Slack notification
+  → Different from Layer 4: AI returned valid JSON, just hallucinated a category
+
+Layer 4 (Code-level, catastrophic fallback): Keyword classifier
+  → Triggered ONLY when try/catch fires (Layers 1-3 all failed)
   → Regex patterns on subject + body
-  → Maps to: faktur → sprawy_fakturowe, reklamac → reklamacja_eskalacja, etc.
-  → Triggers ONLY when both Layer 1 and 2 fail
+  → Maps: "faktur" → sprawy_fakturowe, "reklamac" → reklamacja_eskalacja, etc.
+  → Detects urgency from Polish keywords ("pilne", "natychmiast", "asap")
   → Sets _parseError = true → propagates to Slack notification as warning
+  → Different from Layer 3: AI returned no usable output at all
 ```
 
 #### Consequences
 
 **Positive:**
 - Workflow never crashes on AI output. Always returns a valid category.
-- Operator gets warned ("⚠️ AI fallback") in Slack when classification quality is degraded — informed, not surprised.
+- Operator gets warned (`_parseError: true`) in Slack when classification quality is degraded — informed, not surprised.
 - LLM upgrades (gpt-4o-mini → gpt-4o → next model) require zero code changes — schema is declarative.
 - Can switch AI providers (OpenAI → Anthropic → local model) by swapping the LLM node, parser logic stays.
+- **Distinction between semantic and structural failures** allows operator to diagnose root cause from `_parseError` flag and `errorReason` field.
 
 **Negative:**
-- 3 layers of code to maintain. Each has different failure modes.
-- Keyword fallback is less accurate than AI — doesn't understand context. A mail saying "we received your invoice and reject it" gets `sprawy_fakturowe` instead of `reklamacja_eskalacja`.
-- Adds ~50 lines of JS to `Validate and Route` Code node.
+- 4 layers of code to maintain. Each has different failure modes.
+- Keyword fallback (Layer 4) is less accurate than AI — doesn't understand context. A mail saying "we received your invoice and reject it" gets `sprawy_fakturowe` instead of `reklamacja_eskalacja`.
+- Adds ~125 lines of JS to `Validate and Route` Code node (vs ~50 lines for naive single-layer approach).
 
 **Mitigations:**
 - Comprehensive test suite (24 cases) catches regressions in any layer.
 - `_parseError` flag in output enables monitoring: count of fallback activations per day = AI quality KPI.
+
 
 #### Alternatives considered
 
@@ -89,6 +109,9 @@ Layer 3 (Code-level): Keyword fallback classifier
 
 4. **Send mail to "uncategorized" inbox if AI fails**
    Rejected — defeats purpose of automation. Operator would have to manually triage anyway.
+
+5. **Treat semantic and structural failures as one layer (original design)**
+   Rejected during v6.1 — obscured the actual logic flow and made it harder to diagnose AI quality issues. Splitting them improved both code clarity and operational observability.
 
 ---
 
@@ -121,10 +144,12 @@ Move all configuration to **Google Sheets** with 4 tabs, loaded at the start of 
 
 | Tab | Purpose | Schema |
 |---|---|---|
-| `Zespol` | Team routing | `kategoria` → `osoba` → `rola` → `slack_channel` → `slack_user_id` → `gmail_label_id` → `emoji` |
+| `Zespół` | Team routing | `kategoria` → `osoba` → `rola` → `slack_channel` → `slack_user_id` → `gmail_label_id` → `emoji` |
 | `Konfiguracja` | System parameters | `klucz` → `wartosc` → `opis` (key/value pairs) |
 | `Kategorie` | AI prompt context | `klucz` → `nazwa_pl` → `emoji` → `opis_dla_ai` → `ton_odpowiedzi` |
 | `Historia` | Audit log (auto-append) | `data` → `email_nadawcy` → `kategoria` → `temat` → `decyzja` → `przypisano` |
+
+> **Note on naming convention:** The Sheet tab name uses Polish character `ę` (`Zespół`), matching the tab name as displayed in Google Sheets UI. The corresponding n8n node that loads this tab is named `Load Zespol` without the `ę` — n8n node names use ASCII to avoid issues with expression syntax and automatic references. This intentional split (Polish for user-facing tab, ASCII for code identifier) is consistent across all workflow JSON.
 
 The classifier prompt is built dynamically from `Kategorie`:
 
@@ -137,12 +162,12 @@ KATEGORIE:
 
 The draft generator picks tone of voice per category from `Kategorie.ton_odpowiedzi`.
 
-Routing picks team member from `Zespol[category]`.
+Routing picks team member from `Zespół[category]` (loaded via `Load Zespol` node — see naming note above).
 
 #### Consequences
 
 **Positive:**
-- **Operator self-service:** adding a new category is 1 row in `Kategorie` + 1 row in `Zespol`. No deploy.
+- **Operator self-service:** adding a new category is 1 row in `Kategorie` + 1 row in `Zespół`. No deploy.
 - **Audit trail visible to operator:** `Historia` is human-readable, can be filtered/sorted in Google UI.
 - **Decoupled from workflow:** can A/B test prompt variations by editing one cell.
 - **Disaster recovery:** workflow JSON can be re-imported from scratch; config persists in Sheets.
@@ -310,7 +335,7 @@ GPT-4o-mini hallucination rate is non-zero. Even with low rates (~1-3%), at scal
   - On `?action=odrzuc`: Slack notify, draft stays in Gmail
   - On timeout: Slack alert to #general
 
-**Default:** Stage 1 only. Approval is opt-in per category in `Zespol` config (future v7 will add explicit `approval_required: true/false` column).
+**Default:** Stage 1 only. Approval is opt-in per category in `Zespół` config (future v7 will add explicit `approval_required: true/false` column).
 
 #### Consequences
 
@@ -425,7 +450,7 @@ This makes execution log immediately point to failing node + original error.
 
 **Layer 2 — Dedicated `errorWorkflow`** bound via settings (`errorWorkflow: "HmSyczIa6tXTEhFe"`) on both main and Extended workflows.
 
-Error Handler workflow has 5 nodes:
+Error Handler workflow has 5 elements (4 functional nodes + 1 sticky note for inline documentation):
 1. **Error Trigger** — receives error context
 2. **Format Error Alert** (Code) — classifies severity + builds message:
    - HIGH 🔴 → `ECONNREFUSED|timeout|rate limit|503` (service outage)
@@ -433,7 +458,7 @@ Error Handler workflow has 5 nodes:
    - MEDIUM 🟡 → everything else
 3. **Slack #general** (primary, retry 3×) — formatted alert with workflow/node/timestamp/severity
 4. **Gmail backup** (parallel, `onError: continueRegularOutput`) — same content as HTML email to admin
-5. (No 5th node — flow ends)
+5. **Sticky note** — inline documentation of dual-channel rationale (visible to anyone editing the workflow)
 
 **Both Slack and Gmail are triggered in parallel.** If Slack fails, Gmail still arrives. If Gmail fails, Slack alert is still seen.
 
@@ -469,8 +494,10 @@ Error Handler workflow has 5 nodes:
 ## ADR-007
 ### Differentiated retry strategy per service
 
-**Status:** Accepted
-**Date:** 2026-03 (v6)
+**Status:** Accepted (revised 2026-04)
+**Date:** 2026-03 (v6), revised 2026-04 (v6.1 — clarified AI retry asymmetry between MAIN and EXTENDED workflows)
+
+> **Revision note (2026-04):** Original ADR stated "OpenAI calls: 3×/3s/throw" as a uniform policy. In review, observed that this only applies to AI Generate Tasks in EXTENDED workflow. MAIN workflow's AI Categorize Email and AI Generate Draft have no node-level retry — they rely on the 4-layer fallback chain (ADR-001) for resilience. ADR updated to honestly document this asymmetry with rationale.
 
 #### Context
 
@@ -493,15 +520,20 @@ Per-node retry strategy:
 
 | Service / Operation | Retry | Wait | `onError` | Rationale |
 |---|---|---|---|---|
-| Google Sheets reads | 3× | 2s | throw | Idempotent, fast recovery |
-| Slack messages | 3× | 3-5s | continueRegularOutput | Rate limits common, msg duplication tolerable |
-| Gmail mutations (label, draft) | 0× | — | continueRegularOutput | Risk of duplication; non-critical |
-| Gmail reads | 3× | — | throw | Idempotent |
-| OpenAI calls | 3× | 3s | throw | 5xx recoverable, but throw if persists |
+| Google Sheets reads (`Load Zespol`, `Load Config`, `Load Kategorie`) | 3× | 2s | throw | Idempotent, fast recovery |
+| Slack messages in MAIN (URGENT Channel, Normal Channel, Worker DM) | 3× | 3s | continueRegularOutput | Rate limits common, msg duplication tolerable |
+| Slack alert in Error Handler (Slack - Error Alert) | 3× | 5s | continueRegularOutput | Higher backoff because called during incident |
+| Gmail mutations (label, draft, mark as read, send) | 0× | — | continueRegularOutput | Risk of duplication; non-critical |
+| OpenAI calls in EXTENDED (AI Generate Tasks) | 3× | 3s | throw | 5xx recoverable, but throw if persists |
+| OpenAI calls in MAIN (AI Categorize Email, AI Generate Draft) | 0× | — | (relies on Layer 4 keyword fallback) | See note below |
 | Trello card creation | 0× | — | continueRegularOutput | Risk of duplicate cards |
 | Drive folder creation | 0× | — | continueRegularOutput | Risk of duplicate folders (Sheets cache covers) |
 
-**Critical path** (validation, AI, routing) — **no retry**, fail fast and let `errorWorkflow` handle. Retrying critical path delays user feedback.
+> **Note on AI retry asymmetry:** MAIN workflow's AI calls (categorization + draft generation) do not have node-level retry — instead, they rely on the 4-layer fallback chain documented in [ADR-001](#adr-001) for resilience. When OpenAI returns 5xx in MAIN, the workflow proceeds via Layer 4 (keyword fallback) with `_parseError: true` flag rather than retrying. EXTENDED's AI Generate Tasks does have retry (3×/3s) because it's called via HTTP node (not Agent node) and has no equivalent fallback chain.
+>
+> This asymmetry is intentional but worth flagging: at 20 mails/day a 5xx burst is rare, and Layer 4 fallback is acceptable degradation. At higher scale, adding 3× retry to MAIN AI nodes would reduce keyword-fallback rate at the cost of latency. Tracked in v7 backlog.
+
+**Critical path** (validation, AI, routing) — fail fast and let `errorWorkflow` handle catastrophic failures. For AI specifically, the 4-layer fallback is the recovery mechanism (see ADR-001), not retry.
 
 **Non-critical path** (Slack notifications, Gmail labels) — `onError: continueRegularOutput` allows flow to continue even if one notification fails.
 
@@ -591,7 +623,7 @@ Both branches always run. Approval is part of the natural flow.
 
 #### Context
 
-Workflow loads 3 Google Sheets at start: `Zespol`, `Konfiguracja`, `Kategorie`. Initially loaded in parallel using `Merge` node with `numberInputs: 3` and `chooseBranch` mode.
+Workflow loads 3 Google Sheets at start: `Zespół`, `Konfiguracja`, `Kategorie`. Initially loaded in parallel using `Merge` node with `numberInputs: 3` and `chooseBranch` mode.
 
 **Discovered n8n bug:** `Merge` node with 3 inputs in `chooseBranch` mode does not generate the 3rd input slot in UI. Workflow runs but silently drops the 3rd input.
 
@@ -657,7 +689,7 @@ Problems:
 1. AI output parsing (3 formats: object / string / raw)
 2. Validation against allowed categories
 3. Keyword fallback if parsing fails
-4. Routing assignment from `Zespol` config
+4. Routing assignment from `Zespół` config
 5. Crisis manager assignment if `isUrgent`
 
 #### Consequences
@@ -668,7 +700,7 @@ Problems:
 - **Easier to test** — single node, single set of test cases.
 
 **Negative:**
-- **Larger Code node** — ~150 lines of JS in one node. Harder to scan visually.
+- **Larger Code node** — ~125 lines of JS in one node. Harder to scan visually.
 - **No granular execution log** — if an issue happens in routing logic, the whole node shows as failed (not a specific sub-step).
 
 #### Alternatives considered
@@ -679,23 +711,5 @@ Problems:
 2. **Move to TypeScript / external module**
    Rejected — over-engineering. n8n Code nodes are fine for this scale.
 
----
 
-## Decision review process
 
-These ADRs are **immutable**. If a decision needs to be changed:
-
-1. Create new ADR (e.g., ADR-011) that **supersedes** the old one
-2. Mark old ADR as `Status: Superseded by ADR-011`
-3. Document the reason for change
-
-This preserves the historical record of why we made decisions, not just what the current state is.
-
----
-
-## See also
-
-- [`README.md`](../README.md) — project overview
-- [`google-sheets-schema.md`](google-sheets-schema.md) — Sheets configuration reference
-- [`lessons-learned.md`](lessons-learned.md) — operational learnings and gotchas
-- [`testy/test_results_2026-04-08.md`](testy/test_results_2026-04-08.md) — full pipeline test results
