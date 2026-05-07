@@ -72,20 +72,9 @@ For transparency about what n8n exports and what it does NOT export:
 
 Credential references in JSON are pointers (`id` + `name`) to credentials stored in n8n's separate credential store, never the credentials themselves. **Sanitization here is about removing operational fingerprints, not about hiding secrets.**
 
-### What is the same as production
-
-Everything that defines *how the workflow works* is preserved verbatim:
-
-- All node configurations (parameters, settings, retry policies, onError handlers)
-- All connections between nodes
-- All Code node bodies (JavaScript code, including comments in Polish)
-- All AI prompts, structured output schemas, LangChain chain configurations
-- All retry strategies, timeouts, error handling
-
-Importing these files produces a workflow that is **structurally identical** to production. The differences are only at the configuration boundary (credentials, webhook URLs) which n8n re-configures on import anyway.
 
 ## Verification
 
-After completing setup per [`docs/SETUP.md`](../docs/SETUP.md), run the test suite from [`../test_emails.json`](../test_emails.json) to verify behavior matches the documented production baseline ([`../docs/testy/test_results_2026-04-08.md`](../docs/testy/test_results_2026-04-08.md)).
+After completing setup per [`docs/SETUP.md`](../docs/SETUP.md), run the test suite from [`../test_emails.json`](../testy/test_emails.json) to verify behavior matches the documented production baseline ([`../testy/test_results_2026-04-08.md`](../testy/test_results_2026-04-08.md)).
 
 If any of the 24 tests fail, the most likely cause is incomplete configuration (missing credential, wrong Sheet ID, wrong channel name). The Error Handler workflow surfaces the specific failure with severity classification.
