@@ -2,12 +2,6 @@
 
 This document defines how prompt candidate versions are validated against production versions before deployment.
 
-## Why A/B testing for prompts
-
-Prompt engineering literature is full of best practices, but "best" is contextual. Few-shot examples generally improve classification, but the *specific examples* you choose can hurt accuracy if they don't match your data distribution. Anti-hallucination phrase substitutions help, but if the substitutions are awkward in Polish business correspondence, operators will modify every draft.
-
-The only valid answer to "is v2 better than v1?" is empirical: run both on the same inputs, compare metrics defined in advance, decide based on results.
-
 ## Test set design
 
 ### Categorize Email — test set
