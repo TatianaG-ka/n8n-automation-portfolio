@@ -12,7 +12,7 @@
 
 This is the prompt that has been running in production. Three design decisions are worth highlighting:
 
-**Categories injected dynamically from Sheets.** The list of available categories is not hardcoded — it's pulled from the `Kategorie` Sheet at every workflow run. Operator adds a new category in Sheets → the AI adapts on the next email, no code change required. This is the AI side of the config-as-data architecture (see [ADR-002](../design-decisions.md#adr-002)).
+**Categories injected dynamically from Sheets.** The list of available categories is not hardcoded — it's pulled from the `Kategorie` Sheet at every workflow run. Operator adds a new category in Sheets → the AI adapts on the next email, no code change required. This is the AI side of the config-as-data architecture (see [ADR-002](https://github.com/TatianaG-ka/n8n-automation-portfolio/blob/main/email-triage-system/docs/design_decisions_ADR.md#adr-002)).
 
 **Structured Output Parser does the heavy lifting.** The schema (5 fields, `urgency` as enum) is enforced by LangChain's parser, not by prose instructions. The model is constrained to valid output structurally, not just asked nicely. This is why the prompt itself can be relatively short — the parser catches what prose would miss.
 
