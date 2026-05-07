@@ -1,11 +1,7 @@
 # Test cases — Email Triage v6.1
 
-Test data: [`../../test_emails.json`](../../test_emails.json) (24 emails)
+Test data: [`../../test_emails.json`](../testy/test_emails.json) (24 emails)
 Workflow: `Email Triage - v6.1 PRODUCTION`
-
-This document is the **executable test specification** — it lists every test case, expected category, expected urgency, expected routing, and what to verify in each downstream system. Pair it with [`test_results_2026-04-08.md`](test_results_2026-04-08.md) for the most recent execution baseline.
-
-> **Note on test data:** Test cases use placeholder names matching [`docs/google-sheets-template.xlsx`](../google-sheets-template.xlsx) (Piotr Nowak, Marta Wiśniewska, Jan Zieliński, Karolina Dąbrowska, Anna Kowalska as crisis manager). To run these tests against your own deployment, your `Zespół` Sheet should map categories to your actual team — expected routing in this document will then point to your team members instead.
 
 ## How to test
 
@@ -109,4 +105,4 @@ Total test cases:  33
 
 24 automated tests (categories + urgency + edge cases + v6 new scenarios) executed on 2026-04-08 — see [`test_results_2026-04-08.md`](test_results_2026-04-08.md).
 
-The remaining 9 tests (error handling 25-30, approval flow 31-33) require manual simulation per [`SETUP.md` Phase 8](../SETUP.md#phase-8--first-test).
+The remaining 9 tests (error handling 25-30, approval flow 31-33) require manual simulation per [`SETUP.md` Phase 8](../docs/SETUP.md#phase-8--first-test).
